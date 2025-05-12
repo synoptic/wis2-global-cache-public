@@ -1,0 +1,7 @@
+[
+  {
+    "user_id": "devadmin",
+    "password": "admin123",
+    "is_superuser": true
+  }
+]

@@ -1,0 +1,35 @@
+{
+  "Rules": [
+    {
+      "ID": "IntelligentTieringRule",
+      "Filter": {
+        "Prefix": ""
+      },
+      "Status": "Enabled",
+      "Transitions": [
+        {
+          "Days": 0,
+          "StorageClass": "INTELLIGENT_TIERING"
+        }
+      ]
+    },
+    {
+      "ID": "AbortIncompleteMultipartUploadRule",
+      "Filter": {
+        "Prefix": ""
+      },
+      "Status": "Enabled",
+      "AbortIncompleteMultipartUpload": {
+        "DaysAfterInitiation": 7
+      }
+    },
+    {
+      "Expiration": {
+        "Days": 1
+      },
+      "ID": "DeleteAfter1Day",
+      "Filter": {},
+      "Status": "Enabled"
+    }
+  ]
+}

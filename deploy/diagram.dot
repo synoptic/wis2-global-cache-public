@@ -1,0 +1,766 @@
+digraph "Diagram" {
+  splines = "ortho";
+  pad = "1.0";
+  nodesep = "0.60";
+  ranksep = "0.75";
+  fontname = "Sans-Serif";
+  fontsize = "15";
+  dpi = "200";
+  rankdir = "BT";
+  compound = "true";
+  fontcolor = "#222222";
+  edge [
+    color = "#D5871488",
+    penwidth = 2,
+    arrowhead = "dot",
+    arrowtail = "dot",
+  ];
+  node [
+    shape = "box",
+    style = "rounded",
+    fixedsize = true,
+    width = 1.7,
+    height = 1.7,
+    labelloc = "c",
+    imagescale = true,
+    fontname = "Sans-Serif",
+    fontsize = 8,
+    margin = 8,
+  ];
+  subgraph "App" {
+    subgraph "cluster-SubGraph.App" {
+      graph [
+        label = "App",
+        labelloc = "b",
+        labeljust = "l",
+        margin = "10",
+        fontsize = "16",
+        penwidth = "2",
+        pencolor = "#888888",
+        style = "filled,rounded",
+        fillcolor = "#f3f3f3",
+      ];
+      subgraph "cluster-SubGraph.wis2-sqs-work" {
+        graph [
+          label = "wis2-sqs-work",
+          labelloc = "b",
+          labeljust = "l",
+          margin = "10",
+          fontsize = "16",
+          penwidth = "2",
+          pencolor = "#888888",
+          style = "filled,rounded",
+          fillcolor = "#e4e4e4",
+        ];
+        "wis2-sqs-work/WIS2GlobalCacheDLQ" [
+          label = " WIS2GlobalCacheDLQ",
+          fontsize = 12,
+          image = "/home/jmax/.npm/_npx/b98735c91b702b55/node_modules/cdk-dia/icons/aws/Service/Arch_App-Integration/Arch_64/Arch_AWS-Simple-Queue-Service_64@5x.png",
+          imagescale = "true",
+          imagepos = "tc",
+          penwidth = "0",
+          shape = "node",
+          fixedsize = "true",
+          labelloc = "b",
+          width = 2,
+          height = 2.266,
+        ];
+        "wis2-sqs-work/WIS2GlobalCacheQueue" [
+          label = " WIS2GlobalCacheQueue",
+          fontsize = 12,
+          image = "/home/jmax/.npm/_npx/b98735c91b702b55/node_modules/cdk-dia/icons/aws/Service/Arch_App-Integration/Arch_64/Arch_AWS-Simple-Queue-Service_64@5x.png",
+          imagescale = "true",
+          imagepos = "tc",
+          penwidth = "0",
+          shape = "node",
+          fixedsize = "true",
+          labelloc = "b",
+          width = 2,
+          height = 2.266,
+        ];
+      }
+      subgraph "cluster-SubGraph.wis2-redis-cache" {
+        graph [
+          label = "wis2-redis-cache",
+          labelloc = "b",
+          labeljust = "l",
+          margin = "10",
+          fontsize = "16",
+          penwidth = "2",
+          pencolor = "#888888",
+          style = "filled,rounded",
+          fillcolor = "#e4e4e4",
+        ];
+        "wis2-redis-cache/wis2-redis-cache-subnet-group" [
+          label = " ELASTICACHE\nSUBNETGROUP",
+          fontsize = 12,
+        ];
+        "wis2-redis-cache/wis2-redis-cache-WalledGarden" [
+          label = " wis2 redis cache\nWalledGarden",
+          fontsize = 12,
+          image = "/home/jmax/.npm/_npx/b98735c91b702b55/node_modules/cdk-dia/icons/aws/security_group.png",
+          imagescale = "true",
+          imagepos = "tc",
+          penwidth = "0",
+          shape = "node",
+          fixedsize = "true",
+          labelloc = "b",
+          width = 2,
+          height = 2.4819999999999998,
+        ];
+        "wis2-redis-cache/wis2-redis-cache-redis" [
+          label = " ELASTICACHE\nREPLICATIONGROUP",
+          fontsize = 12,
+        ];
+        "wis2-redis-cache/wis2-redis-cache-redis-url-primary" [
+          label = " wis2 redis cache\nredis url primary",
+          fontsize = 12,
+          image = "/home/jmax/.npm/_npx/b98735c91b702b55/node_modules/cdk-dia/icons/aws/Resource/Res_Management-Governance/Res_48_Dark/Res_AWS-Systems-Manager_Parameter-Store_48_Dark.png",
+          imagescale = "true",
+          imagepos = "tc",
+          penwidth = "0",
+          shape = "node",
+          fixedsize = "true",
+          labelloc = "b",
+          width = 2,
+          height = 2.4819999999999998,
+        ];
+        "wis2-redis-cache/wis2-redis-cache-redis-url-read" [
+          label = " wis2 redis cache\nredis url read",
+          fontsize = 12,
+          image = "/home/jmax/.npm/_npx/b98735c91b702b55/node_modules/cdk-dia/icons/aws/Resource/Res_Management-Governance/Res_48_Dark/Res_AWS-Systems-Manager_Parameter-Store_48_Dark.png",
+          imagescale = "true",
+          imagepos = "tc",
+          penwidth = "0",
+          shape = "node",
+          fixedsize = "true",
+          labelloc = "b",
+          width = 2,
+          height = 2.4819999999999998,
+        ];
+      }
+      subgraph "cluster-SubGraph.wis2-client-cluster" {
+        graph [
+          label = "wis2-client-cluster",
+          labelloc = "b",
+          labeljust = "l",
+          margin = "10",
+          fontsize = "16",
+          penwidth = "2",
+          pencolor = "#888888",
+          style = "filled,rounded",
+          fillcolor = "#e4e4e4",
+        ];
+        "wis2-client-cluster/wis2-client-cluster-cluster" [
+          label = " wis2 client cluster\ncluster",
+          fontsize = 12,
+          image = "/home/jmax/.npm/_npx/b98735c91b702b55/node_modules/cdk-dia/icons/aws/Service/Arch_Compute/64/Arch_Amazon-Elastic-Container-Service_64@5x.png",
+          imagescale = "true",
+          imagepos = "tc",
+          penwidth = "0",
+          shape = "node",
+          fixedsize = "true",
+          labelloc = "b",
+          width = 2,
+          height = 2.4819999999999998,
+        ];
+      }
+      subgraph "cluster-SubGraph.wis2-client-france" {
+        graph [
+          label = "wis2-client-france",
+          labelloc = "b",
+          labeljust = "l",
+          margin = "10",
+          fontsize = "16",
+          penwidth = "2",
+          pencolor = "#888888",
+          style = "filled,rounded",
+          fillcolor = "#e4e4e4",
+        ];
+        "wis2-client-france/wis2-client-france-mqtt-security" [
+          label = " wis2 client france\nmqtt security",
+          fontsize = 12,
+          image = "/home/jmax/.npm/_npx/b98735c91b702b55/node_modules/cdk-dia/icons/aws/security_group.png",
+          imagescale = "true",
+          imagepos = "tc",
+          penwidth = "0",
+          shape = "node",
+          fixedsize = "true",
+          labelloc = "b",
+          width = 2,
+          height = 2.4819999999999998,
+        ];
+        "wis2-client-france/wis2-client-france-execution-role" [
+          label = " wis2 client france\nexecution role",
+          fontsize = 12,
+          image = "/home/jmax/.npm/_npx/b98735c91b702b55/node_modules/cdk-dia/icons/aws/Service/Arch_Security-Identity-Compliance/64/Arch_AWS-Identity-and-Access-Management_64@5x.png",
+          imagescale = "true",
+          imagepos = "tc",
+          penwidth = "0",
+          shape = "node",
+          fixedsize = "true",
+          labelloc = "b",
+          width = 1.2,
+          height = 1.682,
+        ];
+        "wis2-client-france/wis2-client-france-task-role" [
+          label = " wis2 client france\ntask role",
+          fontsize = 12,
+          image = "/home/jmax/.npm/_npx/b98735c91b702b55/node_modules/cdk-dia/icons/aws/Service/Arch_Security-Identity-Compliance/64/Arch_AWS-Identity-and-Access-Management_64@5x.png",
+          imagescale = "true",
+          imagepos = "tc",
+          penwidth = "0",
+          shape = "node",
+          fixedsize = "true",
+          labelloc = "b",
+          width = 1.2,
+          height = 1.682,
+        ];
+        "wis2-client-france/wis2-client-france-task" [
+          label = " wis2 client france\ntask",
+          fontsize = 12,
+          image = "/home/jmax/.npm/_npx/b98735c91b702b55/node_modules/cdk-dia/icons/aws/Resource/Res_Containers/Res_48_Dark/Res_Amazon-Elastic-Container-Service_Task_48_Dark_gen.png",
+          imagescale = "true",
+          imagepos = "tc",
+          penwidth = "0",
+          shape = "node",
+          fixedsize = "true",
+          labelloc = "b",
+          width = 2,
+          height = 2.4819999999999998,
+        ];
+        "wis2-client-france/wis2-client-france-service/Service" [
+          label = " ECS Service Service",
+          fontsize = 12,
+          image = "/home/jmax/.npm/_npx/b98735c91b702b55/node_modules/cdk-dia/icons/aws/Resource/Res_Containers/Res_48_Dark/Res_Amazon-Elastic-Container-Service_Service_48_Dark_gen.png",
+          imagescale = "true",
+          imagepos = "tc",
+          penwidth = "0",
+          shape = "node",
+          fixedsize = "true",
+          labelloc = "b",
+          width = 2,
+          height = 2.266,
+        ];
+      }
+      subgraph "cluster-SubGraph.wis2-client-brazil" {
+        graph [
+          label = "wis2-client-brazil",
+          labelloc = "b",
+          labeljust = "l",
+          margin = "10",
+          fontsize = "16",
+          penwidth = "2",
+          pencolor = "#888888",
+          style = "filled,rounded",
+          fillcolor = "#e4e4e4",
+        ];
+        "wis2-client-brazil/wis2-client-brazil-mqtt-security" [
+          label = " wis2 client brazil\nmqtt security",
+          fontsize = 12,
+          image = "/home/jmax/.npm/_npx/b98735c91b702b55/node_modules/cdk-dia/icons/aws/security_group.png",
+          imagescale = "true",
+          imagepos = "tc",
+          penwidth = "0",
+          shape = "node",
+          fixedsize = "true",
+          labelloc = "b",
+          width = 2,
+          height = 2.4819999999999998,
+        ];
+        "wis2-client-brazil/wis2-client-brazil-execution-role" [
+          label = " wis2 client brazil\nexecution role",
+          fontsize = 12,
+          image = "/home/jmax/.npm/_npx/b98735c91b702b55/node_modules/cdk-dia/icons/aws/Service/Arch_Security-Identity-Compliance/64/Arch_AWS-Identity-and-Access-Management_64@5x.png",
+          imagescale = "true",
+          imagepos = "tc",
+          penwidth = "0",
+          shape = "node",
+          fixedsize = "true",
+          labelloc = "b",
+          width = 1.2,
+          height = 1.682,
+        ];
+        "wis2-client-brazil/wis2-client-brazil-task-role" [
+          label = " wis2 client brazil\ntask role",
+          fontsize = 12,
+          image = "/home/jmax/.npm/_npx/b98735c91b702b55/node_modules/cdk-dia/icons/aws/Service/Arch_Security-Identity-Compliance/64/Arch_AWS-Identity-and-Access-Management_64@5x.png",
+          imagescale = "true",
+          imagepos = "tc",
+          penwidth = "0",
+          shape = "node",
+          fixedsize = "true",
+          labelloc = "b",
+          width = 1.2,
+          height = 1.682,
+        ];
+        "wis2-client-brazil/wis2-client-brazil-task" [
+          label = " wis2 client brazil\ntask",
+          fontsize = 12,
+          image = "/home/jmax/.npm/_npx/b98735c91b702b55/node_modules/cdk-dia/icons/aws/Resource/Res_Containers/Res_48_Dark/Res_Amazon-Elastic-Container-Service_Task_48_Dark_gen.png",
+          imagescale = "true",
+          imagepos = "tc",
+          penwidth = "0",
+          shape = "node",
+          fixedsize = "true",
+          labelloc = "b",
+          width = 2,
+          height = 2.4819999999999998,
+        ];
+        "wis2-client-brazil/wis2-client-brazil-service/Service" [
+          label = " ECS Service Service",
+          fontsize = 12,
+          image = "/home/jmax/.npm/_npx/b98735c91b702b55/node_modules/cdk-dia/icons/aws/Resource/Res_Containers/Res_48_Dark/Res_Amazon-Elastic-Container-Service_Service_48_Dark_gen.png",
+          imagescale = "true",
+          imagepos = "tc",
+          penwidth = "0",
+          shape = "node",
+          fixedsize = "true",
+          labelloc = "b",
+          width = 2,
+          height = 2.266,
+        ];
+      }
+      subgraph "cluster-SubGraph.wis2-client-nws-noaa" {
+        graph [
+          label = "wis2-client-nws-noaa",
+          labelloc = "b",
+          labeljust = "l",
+          margin = "10",
+          fontsize = "16",
+          penwidth = "2",
+          pencolor = "#888888",
+          style = "filled,rounded",
+          fillcolor = "#e4e4e4",
+        ];
+        "wis2-client-nws-noaa/wis2-client-nws-noaa-mqtt-security" [
+          label = " wis2 client nws noaa\nmqtt security",
+          fontsize = 12,
+          image = "/home/jmax/.npm/_npx/b98735c91b702b55/node_modules/cdk-dia/icons/aws/security_group.png",
+          imagescale = "true",
+          imagepos = "tc",
+          penwidth = "0",
+          shape = "node",
+          fixedsize = "true",
+          labelloc = "b",
+          width = 2,
+          height = 2.4819999999999998,
+        ];
+        "wis2-client-nws-noaa/wis2-client-nws-noaa-execution-role" [
+          label = " wis2 client nws noaa\nexecution role",
+          fontsize = 12,
+          image = "/home/jmax/.npm/_npx/b98735c91b702b55/node_modules/cdk-dia/icons/aws/Service/Arch_Security-Identity-Compliance/64/Arch_AWS-Identity-and-Access-Management_64@5x.png",
+          imagescale = "true",
+          imagepos = "tc",
+          penwidth = "0",
+          shape = "node",
+          fixedsize = "true",
+          labelloc = "b",
+          width = 1.2,
+          height = 1.682,
+        ];
+        "wis2-client-nws-noaa/wis2-client-nws-noaa-task-role" [
+          label = " wis2 client nws noaa\ntask role",
+          fontsize = 12,
+          image = "/home/jmax/.npm/_npx/b98735c91b702b55/node_modules/cdk-dia/icons/aws/Service/Arch_Security-Identity-Compliance/64/Arch_AWS-Identity-and-Access-Management_64@5x.png",
+          imagescale = "true",
+          imagepos = "tc",
+          penwidth = "0",
+          shape = "node",
+          fixedsize = "true",
+          labelloc = "b",
+          width = 1.2,
+          height = 1.682,
+        ];
+        "wis2-client-nws-noaa/wis2-client-nws-noaa-task" [
+          label = " wis2 client nws noaa\ntask",
+          fontsize = 12,
+          image = "/home/jmax/.npm/_npx/b98735c91b702b55/node_modules/cdk-dia/icons/aws/Resource/Res_Containers/Res_48_Dark/Res_Amazon-Elastic-Container-Service_Task_48_Dark_gen.png",
+          imagescale = "true",
+          imagepos = "tc",
+          penwidth = "0",
+          shape = "node",
+          fixedsize = "true",
+          labelloc = "b",
+          width = 2,
+          height = 2.4819999999999998,
+        ];
+        "wis2-client-nws-noaa/wis2-client-nws-noaa-service/Service" [
+          label = " ECS Service Service",
+          fontsize = 12,
+          image = "/home/jmax/.npm/_npx/b98735c91b702b55/node_modules/cdk-dia/icons/aws/Resource/Res_Containers/Res_48_Dark/Res_Amazon-Elastic-Container-Service_Service_48_Dark_gen.png",
+          imagescale = "true",
+          imagepos = "tc",
+          penwidth = "0",
+          shape = "node",
+          fixedsize = "true",
+          labelloc = "b",
+          width = 2,
+          height = 2.266,
+        ];
+      }
+      subgraph "cluster-SubGraph.prod-emqx-broker" {
+        graph [
+          label = "prod-emqx-broker",
+          labelloc = "b",
+          labeljust = "l",
+          margin = "10",
+          fontsize = "16",
+          penwidth = "2",
+          pencolor = "#888888",
+          style = "filled,rounded",
+          fillcolor = "#e4e4e4",
+        ];
+        "prod-emqx-broker/prod-emqx-broker-role" [
+          label = "\nprod-emqx-broker-role",
+          fontsize = 12,
+          image = "/home/jmax/.npm/_npx/b98735c91b702b55/node_modules/cdk-dia/icons/aws/Service/Arch_Security-Identity-Compliance/64/Arch_AWS-Identity-and-Access-Management_64@5x.png",
+          imagescale = "true",
+          imagepos = "tc",
+          penwidth = "0",
+          shape = "node",
+          fixedsize = "true",
+          labelloc = "b",
+          width = 1.2,
+          height = 1.682,
+        ];
+        "prod-emqx-broker/prod-emqx-broker-task" [
+          label = "\nprod-emqx-broker-task",
+          fontsize = 12,
+          image = "/home/jmax/.npm/_npx/b98735c91b702b55/node_modules/cdk-dia/icons/aws/Resource/Res_Containers/Res_48_Dark/Res_Amazon-Elastic-Container-Service_Task_48_Dark_gen.png",
+          imagescale = "true",
+          imagepos = "tc",
+          penwidth = "0",
+          shape = "node",
+          fixedsize = "true",
+          labelloc = "b",
+          width = 2,
+          height = 2.4819999999999998,
+        ];
+        "prod-emqx-broker/prod-emqx-broker-dns" [
+          label = " prod-emqx-broker-dns",
+          fontsize = 12,
+        ];
+        "prod-emqx-broker/prod-emqx-broker-cluster" [
+          label = " prod emqx broker\ncluster",
+          fontsize = 12,
+          image = "/home/jmax/.npm/_npx/b98735c91b702b55/node_modules/cdk-dia/icons/aws/Service/Arch_Compute/64/Arch_Amazon-Elastic-Container-Service_64@5x.png",
+          imagescale = "true",
+          imagepos = "tc",
+          penwidth = "0",
+          shape = "node",
+          fixedsize = "true",
+          labelloc = "b",
+          width = 2,
+          height = 2.4819999999999998,
+        ];
+        "prod-emqx-broker/prod-emqx-broker-dns-alias" [
+          label = " prod emqx broker dns\nalias",
+          fontsize = 12,
+          image = "/home/jmax/.npm/_npx/b98735c91b702b55/node_modules/cdk-dia/icons/aws/Resource/Res_Networking-and-Content-Delivery/Res_48_Dark/Res_Amazon-Route-53-Hosted-Zone_48_Dark_gen.png",
+          imagescale = "true",
+          imagepos = "tc",
+          penwidth = "0",
+          shape = "node",
+          fixedsize = "true",
+          labelloc = "b",
+          width = 1.2,
+          height = 1.682,
+        ];
+        subgraph "cluster-SubGraph.prod-emqx-broker-service" {
+          graph [
+            label = "prod-emqx-broker-service",
+            labelloc = "b",
+            labeljust = "l",
+            margin = "10",
+            fontsize = "16",
+            penwidth = "2",
+            pencolor = "#888888",
+            style = "filled,rounded",
+            fillcolor = "#d6d6d6",
+          ];
+          "prod-emqx-broker/prod-emqx-broker-service/prod-emqx-broker-lb" [
+            label = " prod-emqx-broker-lb",
+            fontsize = 12,
+            image = "/home/jmax/.npm/_npx/b98735c91b702b55/node_modules/cdk-dia/icons/aws/Service/Arch_Networking-Content/64/Arch_Elastic-Load-Balancing_64@5x.png",
+            imagescale = "true",
+            imagepos = "tc",
+            penwidth = "0",
+            shape = "node",
+            fixedsize = "true",
+            labelloc = "b",
+            width = 2,
+            height = 2.266,
+          ];
+          subgraph "cluster-SubGraph.Service" {
+            graph [
+              label = "Service",
+              labelloc = "b",
+              labeljust = "l",
+              margin = "10",
+              fontsize = "16",
+              penwidth = "2",
+              pencolor = "#888888",
+              style = "filled,rounded",
+              fillcolor = "#c7c7c7",
+            ];
+            "prod-emqx-broker/prod-emqx-broker-service/Service/Service" [
+              label = " ECS Service Service",
+              fontsize = 12,
+              image = "/home/jmax/.npm/_npx/b98735c91b702b55/node_modules/cdk-dia/icons/aws/Resource/Res_Containers/Res_48_Dark/Res_Amazon-Elastic-Container-Service_Service_48_Dark_gen.png",
+              imagescale = "true",
+              imagepos = "tc",
+              penwidth = "0",
+              shape = "node",
+              fixedsize = "true",
+              labelloc = "b",
+              width = 2,
+              height = 2.266,
+            ];
+            "prod-emqx-broker/prod-emqx-broker-service/Service/CloudmapService" [
+              label = " CloudmapService",
+              fontsize = 12,
+            ];
+            "prod-emqx-broker/prod-emqx-broker-service/Service/SecurityGroup" [
+              label = " SecurityGroup",
+              fontsize = 12,
+              image = "/home/jmax/.npm/_npx/b98735c91b702b55/node_modules/cdk-dia/icons/aws/security_group.png",
+              imagescale = "true",
+              imagepos = "tc",
+              penwidth = "0",
+              shape = "node",
+              fixedsize = "true",
+              labelloc = "b",
+              width = 2,
+              height = 2.266,
+            ];
+          }
+        }
+      }
+      subgraph "cluster-SubGraph.wis2-manager-lambda" {
+        graph [
+          label = "wis2-manager-lambda",
+          labelloc = "b",
+          labeljust = "l",
+          margin = "10",
+          fontsize = "16",
+          penwidth = "2",
+          pencolor = "#888888",
+          style = "filled,rounded",
+          fillcolor = "#e4e4e4",
+        ];
+        "wis2-manager-lambda/Logs" [
+          label = " Logs",
+          fontsize = 12,
+          image = "/home/jmax/.npm/_npx/b98735c91b702b55/node_modules/cdk-dia/icons/aws/Resource/Res_Management-Governance/Res_48_Dark/Res_Amazon-Cloudwatch_Logs_48_Dark_gen.png",
+          imagescale = "true",
+          imagepos = "tc",
+          penwidth = "0",
+          shape = "node",
+          fixedsize = "true",
+          labelloc = "b",
+          width = 2,
+          height = 2.266,
+        ];
+        "wis2-manager-lambda/WIS2ManagerLambda" [
+          label = " WIS2ManagerLambda",
+          fontsize = 12,
+          image = "/home/jmax/.npm/_npx/b98735c91b702b55/node_modules/cdk-dia/icons/aws/Service/Arch_Compute/64/Arch_AWS-Lambda_64@5x.png",
+          imagescale = "true",
+          imagepos = "tc",
+          penwidth = "0",
+          shape = "node",
+          fixedsize = "true",
+          labelloc = "b",
+          width = 2,
+          height = 2.266,
+        ];
+        "wis2-manager-lambda/WIS2ManagerLambdaRole/Policywis2managerlambdaWIS2ManagerLambdaRole3FAF5B30" [
+          label = "\nPolicywis2managerlamb",
+          fontsize = 12,
+          image = "/home/jmax/.npm/_npx/b98735c91b702b55/node_modules/cdk-dia/icons/aws/Service/Arch_Security-Identity-Compliance/64/Arch_AWS-Identity-and-Access-Management_64@5x.png",
+          imagescale = "true",
+          imagepos = "tc",
+          penwidth = "0",
+          shape = "node",
+          fixedsize = "true",
+          labelloc = "b",
+          width = 1.2,
+          height = 1.682,
+        ];
+      }
+      subgraph "cluster-SubGraph.wis2-metrics-lambda" {
+        graph [
+          label = "wis2-metrics-lambda",
+          labelloc = "b",
+          labeljust = "l",
+          margin = "10",
+          fontsize = "16",
+          penwidth = "2",
+          pencolor = "#888888",
+          style = "filled,rounded",
+          fillcolor = "#e4e4e4",
+        ];
+        "wis2-metrics-lambda/wis2-metrics-lambda-function" [
+          label = " wis2 metrics lambda\nfunction",
+          fontsize = 12,
+          image = "/home/jmax/.npm/_npx/b98735c91b702b55/node_modules/cdk-dia/icons/aws/Service/Arch_Compute/64/Arch_AWS-Lambda_64@5x.png",
+          imagescale = "true",
+          imagepos = "tc",
+          penwidth = "0",
+          shape = "node",
+          fixedsize = "true",
+          labelloc = "b",
+          width = 2,
+          height = 2.4819999999999998,
+        ];
+        "wis2-metrics-lambda/wis2-metrics-lambda-api" [
+          label = " wis2 metrics lambda\napi",
+          fontsize = 12,
+          image = "/home/jmax/.npm/_npx/b98735c91b702b55/node_modules/cdk-dia/icons/aws/Service/Arch_Networking-Content/64/Arch_Amazon-API-Gateway_64@5x.png",
+          imagescale = "true",
+          imagepos = "tc",
+          penwidth = "0",
+          shape = "node",
+          fixedsize = "true",
+          labelloc = "b",
+          width = 1.2,
+          height = 1.682,
+        ];
+        "wis2-metrics-lambda/wis2-metrics-lambda-metrics-record" [
+          label = " wis2 metrics lambda\nmetrics record",
+          fontsize = 12,
+          image = "/home/jmax/.npm/_npx/b98735c91b702b55/node_modules/cdk-dia/icons/aws/Resource/Res_Networking-and-Content-Delivery/Res_48_Dark/Res_Amazon-Route-53-Hosted-Zone_48_Dark_gen.png",
+          imagescale = "true",
+          imagepos = "tc",
+          penwidth = "0",
+          shape = "node",
+          fixedsize = "true",
+          labelloc = "b",
+          width = 1.2,
+          height = 1.682,
+        ];
+      }
+    }
+  }
+  "wis2-sqs-work/WIS2GlobalCacheQueue" -> "wis2-sqs-work/WIS2GlobalCacheDLQ" [
+    dir = "both",
+  ];
+  "wis2-redis-cache/wis2-redis-cache-redis" -> "wis2-redis-cache/wis2-redis-cache-subnet-group" [
+    dir = "both",
+  ];
+  "wis2-redis-cache/wis2-redis-cache-redis" -> "wis2-redis-cache/wis2-redis-cache-WalledGarden" [
+    dir = "both",
+  ];
+  "wis2-redis-cache/wis2-redis-cache-redis-url-primary" -> "wis2-redis-cache/wis2-redis-cache-redis" [
+    dir = "both",
+  ];
+  "wis2-redis-cache/wis2-redis-cache-redis-url-read" -> "wis2-redis-cache/wis2-redis-cache-redis" [
+    dir = "both",
+  ];
+  "wis2-client-france/wis2-client-france-execution-role" -> "wis2-client-france/wis2-client-france-task" [
+    dir = "both",
+  ];
+  "wis2-client-france/wis2-client-france-task" -> "wis2-sqs-work/WIS2GlobalCacheQueue" [
+    dir = "both",
+  ];
+  "wis2-client-france/wis2-client-france-task" -> "wis2-client-france/wis2-client-france-execution-role" [
+    dir = "both",
+  ];
+  "wis2-client-france/wis2-client-france-task" -> "wis2-client-france/wis2-client-france-task-role" [
+    dir = "both",
+  ];
+  "wis2-client-france/wis2-client-france-service/Service" -> "wis2-client-cluster/wis2-client-cluster-cluster" [
+    dir = "both",
+  ];
+  "wis2-client-france/wis2-client-france-service/Service" -> "wis2-client-france/wis2-client-france-mqtt-security" [
+    dir = "both",
+  ];
+  "wis2-client-france/wis2-client-france-service/Service" -> "wis2-client-france/wis2-client-france-task" [
+    dir = "both",
+  ];
+  "wis2-client-brazil/wis2-client-brazil-execution-role" -> "wis2-client-brazil/wis2-client-brazil-task" [
+    dir = "both",
+  ];
+  "wis2-client-brazil/wis2-client-brazil-task" -> "wis2-sqs-work/WIS2GlobalCacheQueue" [
+    dir = "both",
+  ];
+  "wis2-client-brazil/wis2-client-brazil-task" -> "wis2-client-brazil/wis2-client-brazil-execution-role" [
+    dir = "both",
+  ];
+  "wis2-client-brazil/wis2-client-brazil-task" -> "wis2-client-brazil/wis2-client-brazil-task-role" [
+    dir = "both",
+  ];
+  "wis2-client-brazil/wis2-client-brazil-service/Service" -> "wis2-client-cluster/wis2-client-cluster-cluster" [
+    dir = "both",
+  ];
+  "wis2-client-brazil/wis2-client-brazil-service/Service" -> "wis2-client-brazil/wis2-client-brazil-mqtt-security" [
+    dir = "both",
+  ];
+  "wis2-client-brazil/wis2-client-brazil-service/Service" -> "wis2-client-brazil/wis2-client-brazil-task" [
+    dir = "both",
+  ];
+  "wis2-client-nws-noaa/wis2-client-nws-noaa-execution-role" -> "wis2-client-nws-noaa/wis2-client-nws-noaa-task" [
+    dir = "both",
+  ];
+  "wis2-client-nws-noaa/wis2-client-nws-noaa-task" -> "wis2-sqs-work/WIS2GlobalCacheQueue" [
+    dir = "both",
+  ];
+  "wis2-client-nws-noaa/wis2-client-nws-noaa-task" -> "wis2-client-nws-noaa/wis2-client-nws-noaa-execution-role" [
+    dir = "both",
+  ];
+  "wis2-client-nws-noaa/wis2-client-nws-noaa-task" -> "wis2-client-nws-noaa/wis2-client-nws-noaa-task-role" [
+    dir = "both",
+  ];
+  "wis2-client-nws-noaa/wis2-client-nws-noaa-service/Service" -> "wis2-client-cluster/wis2-client-cluster-cluster" [
+    dir = "both",
+  ];
+  "wis2-client-nws-noaa/wis2-client-nws-noaa-service/Service" -> "wis2-client-nws-noaa/wis2-client-nws-noaa-mqtt-security" [
+    dir = "both",
+  ];
+  "wis2-client-nws-noaa/wis2-client-nws-noaa-service/Service" -> "wis2-client-nws-noaa/wis2-client-nws-noaa-task" [
+    dir = "both",
+  ];
+  "prod-emqx-broker/prod-emqx-broker-role" -> "prod-emqx-broker/prod-emqx-broker-task" [
+    dir = "both",
+  ];
+  "prod-emqx-broker/prod-emqx-broker-task" -> "prod-emqx-broker/prod-emqx-broker-role" [
+    dir = "both",
+  ];
+  "prod-emqx-broker/prod-emqx-broker-service/Service/Service" -> "prod-emqx-broker/prod-emqx-broker-task" [
+    dir = "both",
+  ];
+  "prod-emqx-broker/prod-emqx-broker-service/Service/Service" -> "prod-emqx-broker/prod-emqx-broker-cluster" [
+    dir = "both",
+  ];
+  "prod-emqx-broker/prod-emqx-broker-service/Service/Service" -> "prod-emqx-broker/prod-emqx-broker-service/prod-emqx-broker-lb" [
+    dir = "both",
+  ];
+  "prod-emqx-broker/prod-emqx-broker-service/Service/Service" -> "prod-emqx-broker/prod-emqx-broker-service/Service/CloudmapService" [
+    dir = "both",
+  ];
+  "prod-emqx-broker/prod-emqx-broker-service/Service/Service" -> "prod-emqx-broker/prod-emqx-broker-service/Service/SecurityGroup" [
+    dir = "both",
+  ];
+  "prod-emqx-broker/prod-emqx-broker-service/Service/CloudmapService" -> "prod-emqx-broker/prod-emqx-broker-dns" [
+    dir = "both",
+  ];
+  "prod-emqx-broker/prod-emqx-broker-dns-alias" -> "prod-emqx-broker/prod-emqx-broker-service/prod-emqx-broker-lb" [
+    dir = "both",
+  ];
+  "wis2-manager-lambda/WIS2ManagerLambda" -> "wis2-manager-lambda/Logs" [
+    dir = "both",
+  ];
+  "wis2-manager-lambda/WIS2ManagerLambda" -> "wis2-sqs-work/WIS2GlobalCacheQueue" [
+    dir = "both",
+  ];
+  "wis2-manager-lambda/WIS2ManagerLambdaRole/Policywis2managerlambdaWIS2ManagerLambdaRole3FAF5B30" -> "wis2-sqs-work/WIS2GlobalCacheQueue" [
+    dir = "both",
+  ];
+  "wis2-metrics-lambda/wis2-metrics-lambda-api" -> "wis2-metrics-lambda/wis2-metrics-lambda-function" [
+    dir = "both",
+  ];
+  "wis2-metrics-lambda/wis2-metrics-lambda-metrics-record" -> "wis2-metrics-lambda/wis2-metrics-lambda-api" [
+    dir = "both",
+  ];
+}
