@@ -2,6 +2,8 @@
 import os
 import aws_cdk as cdk
 from dotenv import load_dotenv
+
+from stacks.wis2_gc_dashboard import WIS2GCDashboardStack
 from stacks.wis2_lambda_stack import Wis2ManagerLambdaStack
 # from stacks.wis2_broker_stack import Wis2BrokerStack
 from stacks.wis2_client_stack import Wis2ClientClusterStack
@@ -102,6 +104,7 @@ manager_lambda_stack = Wis2ManagerLambdaStack(
     subnet_ids=subnet_ids,
     publisher_secret=os.getenv('PUBLISHER_CREDS'),
     lambda_role_arn=lambda_role_arn,
+    include_insights=True,
     env=env
 )
 manager_lambda_stack.add_dependency(wis2_sqs_stack)
@@ -119,6 +122,19 @@ metrics_lambda_stack = MetricsLambdaStack(
     memory_size=128,
     env=env
 )
+
+# Create dashboard stack with resource names
+WIS2GCDashboardStack(
+    app, 'WIS2GCDashboard',
+    manager_lambda_name=manager_lambda_stack.lambda_function.function_name,
+    work_queue_name=wis2_sqs_stack.queue_name,
+    dlq_name=wis2_sqs_stack.dlq_name,
+    client_services = [dev_client_stack.service],
+    broker_ecs_service_name=emqx_broker_stack.service.service.service_name,
+    broker_ecs_cluster_name=emqx_broker_stack.cluster.cluster_name,
+    env=env
+)
+
 cdk.Tags.of(app).add("cost-app", "wis2-gc-dev")
 
 app.synth()

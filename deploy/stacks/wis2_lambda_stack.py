@@ -31,16 +31,11 @@ class Wis2ManagerLambdaStack(Stack):
                  subnet_ids: list = None,
                  publisher_secret: str = None,
                  lambda_role_arn: str = None,
+                 include_insights: bool = False,
                  **kwargs) -> None:
 
         super().__init__(scope, id, **kwargs)
         mode = 'dev' if 'dev' in id else 'prod'
-
-        # if dev in construct id, set dev mode
-        if 'dev' in id:
-            self.node.set_context('insights', False)
-        else:
-            self.node.set_context('insights', True)
 
         cache_endpoint = ssm.StringParameter.from_string_parameter_attributes(
             self, "redis-write-url",
@@ -107,8 +102,7 @@ class Wis2ManagerLambdaStack(Stack):
                 "MQTT_BROKER_HOST": broker_url,
                 "CACHE_ENDPOINT": cache_endpoint
             },
-            insights_version=_lambda.LambdaInsightsVersion.VERSION_1_0_119_0 if self.node.try_get_context(
-                'insights') else None,
+            insights_version=_lambda.LambdaInsightsVersion.VERSION_1_0_119_0 if include_insights else None,
             dead_letter_queue_enabled=True,
             timeout=Duration.minutes(15),
             log_group=alogs.LogGroup(
