@@ -35,12 +35,6 @@ logger.debug(f"MQTT_CLIENT_ID: {MQTT_CLIENT_ID}")
 global id_cache
 id_cache = TTLCache(maxsize=100000, ttl=timedelta(minutes=60), timer=datetime.now)
 
-# def get_secret():
-#     secret_arn = os.getenv('BROKER_CONNECTION_SECRET_ARN')
-#     client = boto3.client('secretsmanager')
-#     response = client.get_secret_value(SecretId=secret_arn)
-#     return response['SecretString']
-
 def on_connect(client, userdata, flags, reason_code, properties):
     logger.info(f"Connected to host. client id: {MQTT_CLIENT_ID}")
     if flags.session_present:
@@ -140,7 +134,7 @@ def main():
     sqs = boto3.resource('sqs')
     queue_name = os.getenv('QUEUE_NAME')
     queue = sqs.get_queue_by_name(QueueName=queue_name)
-    connection_string = os.getenv('WIS2_BROKER_CONNECTION')
+    connection_string = os.getenv('GB_CONNECTION_STRING')
     global destination_bucket_name
     destination_bucket_name = os.getenv('BUCKET_NAME')
     global id_cache

@@ -1,3 +1,5 @@
+import json
+
 from constructs import Construct
 from aws_cdk import (
     Stack,
@@ -27,7 +29,7 @@ class Wis2ManagerLambdaStack(Stack):
                  memory_footprint: int,
                  vpc_id: str = None,
                  subnet_ids: list = None,
-                 publisher_secret_arn: str = None,
+                 publisher_secret: str = None,
                  lambda_role_arn: str = None,
                  **kwargs) -> None:
 
@@ -46,10 +48,11 @@ class Wis2ManagerLambdaStack(Stack):
         ).string_value
 
         # Use provided secret ARN instead of hardcoding
-        wis2_mqtt_publisher = sm.Secret.from_secret_attributes(
-            self, "emqx_pub_creds",
-            secret_complete_arn=publisher_secret_arn
-        )
+        # wis2_mqtt_publisher = sm.Secret.from_secret_complete_arn(
+        #     self, "emqx_pub_creds",
+        #     secret_complete_arn=publisher_secret_arn
+        # )
+        wis2_mqtt_publisher = json.loads(publisher_secret)
 
         # Get existing SQS queue from ARN
         wis2_lambda_queue = sqs.Queue.from_queue_arn(self, id=queue_name, queue_arn=queue_arn)
@@ -99,8 +102,8 @@ class Wis2ManagerLambdaStack(Stack):
             environment={
                 "dest_bucket_name": cache_bucket_name,
                 "dest_bucket_region": cache_bucket_region,
-                "MQTT_PUB_PASSWORD": wis2_mqtt_publisher.secret_value_from_json('password').unsafe_unwrap(),
-                "MQTT_PUB_USER": wis2_mqtt_publisher.secret_value_from_json('user').unsafe_unwrap(),
+                "MQTT_PUB_PASSWORD": wis2_mqtt_publisher.get('password'),
+                "MQTT_PUB_USER": wis2_mqtt_publisher.get('user'),
                 "MQTT_BROKER_HOST": broker_url,
                 "CACHE_ENDPOINT": cache_endpoint
             },

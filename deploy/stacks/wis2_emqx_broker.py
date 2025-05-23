@@ -1,3 +1,6 @@
+import json
+import os
+
 from aws_cdk import (
     Stack,
     aws_iam as iam,
@@ -24,11 +27,11 @@ class EmqxBrokerStack(Stack):
                  a_record_name: str,
                  cert_arn: str,
                  vpc_id: str = None,
-                 admin_creds_arn: str = None,
-                 emqx_dash_admin_creds_arn: str = None,
-                 publisher_creds_arn: str = None,
-                 everyone_creds_arn: str = None,
-                 subscriber_creds_arn: str = None,
+                 admin_creds: str = None,
+                 emqx_dash_admin_creds: str = None,
+                 publisher_creds: str = None,
+                 everyone_creds: str = None,
+                 subscriber_creds: str = None,
                  memory_footprint: int = 512,
                  **kwargs) -> None:
 
@@ -65,25 +68,33 @@ class EmqxBrokerStack(Stack):
                                  )
 
         # Get credentials from secrets manager using provided ARNs
-        mqtt_admin_creds = sm.Secret.from_secret_attributes(
-            self, f"{construct_id}-admin-creds",
-            secret_complete_arn=admin_creds_arn)
+        # mqtt_admin_creds = sm.Secret.from_secret_complete_arn(
+        #     self, f"{construct_id}-admin-creds",
+        #     secret_complete_arn=admin_creds_arn)
 
-        emqx_dash_admin_creds = sm.Secret.from_secret_attributes(
-            self, f"{construct_id}-emqx-admin-creds",
-            secret_complete_arn=emqx_dash_admin_creds_arn)
+        # emqx_dash_admin_creds = sm.Secret.from_secret_complete_arn(
+        #     self, f"{construct_id}-emqx-admin-creds",
+        #     secret_complete_arn=emqx_dash_admin_creds_arn)
 
-        mqtt_pub_creds = sm.Secret.from_secret_attributes(
-            self, f"{construct_id}-publisher-creds",
-            secret_complete_arn=publisher_creds_arn)
+        # mqtt_pub_creds = sm.Secret.from_secret_complete_arn(
+        #     self, f"{construct_id}-publisher-creds",
+        #     secret_complete_arn=publisher_creds_arn)
+        #
+        # mqtt_everyone_creds = sm.Secret.from_secret_complete_arn(
+        #     self, f"{construct_id}-everyone-creds",
+        #     secret_complete_arn=everyone_creds_arn)
 
-        mqtt_everyone_creds = sm.Secret.from_secret_attributes(
-            self, f"{construct_id}-everyone-creds",
-            secret_complete_arn=everyone_creds_arn)
+        # mqtt_sub_creds = sm.Secret.from_secret_complete_arn(
+        #     self, f"{construct_id}-read-only-creds",
+        #     secret_complete_arn=subscriber_creds_arn)
 
-        mqtt_sub_creds = sm.Secret.from_secret_attributes(
-            self, f"{construct_id}-read-only-creds",
-            secret_complete_arn=subscriber_creds_arn)
+        # Parse credentials from JSON strings
+        mqtt_admin_creds = json.loads(admin_creds)
+        emqx_dash_admin_creds = json.loads(emqx_dash_admin_creds)
+        mqtt_pub_creds = json.loads(publisher_creds)
+        mqtt_everyone_creds = json.loads(everyone_creds)
+        mqtt_sub_creds = json.loads(subscriber_creds)
+
         # Add container with WIS2 credentials
         discovery_namespace = ".".join([env_tag, "wis2.service"])
         discovery_a = "-".join([env_tag, "emqx-disco"])
@@ -95,23 +106,33 @@ class EmqxBrokerStack(Stack):
             f"{construct_id}-container",
             logging=ecs.AwsLogDriver(stream_prefix=construct_id),
             image=ecs.ContainerImage.from_registry(asset.image_uri),
-            secrets={
-                "ADMIN_USER": ecs.Secret.from_secrets_manager(secret=mqtt_admin_creds, field="user"),
-                "ADMIN_PASSWORD": ecs.Secret.from_secrets_manager(secret=mqtt_admin_creds, field="password"),
-                "SUB_USER": ecs.Secret.from_secrets_manager(secret=mqtt_sub_creds, field="user"),
-                "SUB_PASSWORD": ecs.Secret.from_secrets_manager(secret=mqtt_sub_creds, field="password"),
-                "PUB_USER": ecs.Secret.from_secrets_manager(secret=mqtt_pub_creds, field="user"),
-                "PUB_PASSWORD": ecs.Secret.from_secrets_manager(secret=mqtt_pub_creds, field="password"),
-                "EVERYONE_USER": ecs.Secret.from_secrets_manager(secret=mqtt_everyone_creds, field="user"),
-                "EVERYONE_PASSWORD": ecs.Secret.from_secrets_manager(secret=mqtt_everyone_creds, field="password"),
-                "EMQX_DASH_ADMIN_USER": ecs.Secret.from_secrets_manager(secret=emqx_dash_admin_creds, field="user"),
-                "EMQX_DASH_ADMIN_PASSWORD": ecs.Secret.from_secrets_manager(secret=emqx_dash_admin_creds, field="password")
-            },
+            # secrets={
+            #     "ADMIN_USER": ecs.Secret.from_secrets_manager(secret=mqtt_admin_creds, field="user"),
+            #     "ADMIN_PASSWORD": ecs.Secret.from_secrets_manager(secret=mqtt_admin_creds, field="password"),
+            #     "SUB_USER": ecs.Secret.from_secrets_manager(secret=mqtt_sub_creds, field="user"),
+            #     "SUB_PASSWORD": ecs.Secret.from_secrets_manager(secret=mqtt_sub_creds, field="password"),
+            #     "PUB_USER": ecs.Secret.from_secrets_manager(secret=mqtt_pub_creds, field="user"),
+            #     "PUB_PASSWORD": ecs.Secret.from_secrets_manager(secret=mqtt_pub_creds, field="password"),
+            #     "EVERYONE_USER": ecs.Secret.from_secrets_manager(secret=mqtt_everyone_creds, field="user"),
+            #     "EVERYONE_PASSWORD": ecs.Secret.from_secrets_manager(secret=mqtt_everyone_creds, field="password"),
+            #     "EMQX_DASH_ADMIN_USER": ecs.Secret.from_secrets_manager(secret=emqx_dash_admin_creds, field="user"),
+            #     "EMQX_DASH_ADMIN_PASSWORD": ecs.Secret.from_secrets_manager(secret=emqx_dash_admin_creds, field="password")
+            # },
 
             environment={
                 "EMQX_CLUSTER__DISCOVERY_STRATEGY": "dns",
                 "EMQX_CLUSTER__DNS__NAME": ".".join([discovery_a, discovery_namespace]),
                 "EMQX_CLUSTER__DNS__RECORD_TYPE": "a",
+                "ADMIN_USER": mqtt_admin_creds.get("user"),
+                "ADMIN_PASSWORD": mqtt_admin_creds.get("password"),
+                "SUB_USER": mqtt_sub_creds.get("user"),
+                "SUB_PASSWORD": mqtt_sub_creds.get("password"),
+                "PUB_USER": mqtt_pub_creds.get("user"),
+                "PUB_PASSWORD": mqtt_pub_creds.get("password"),
+                "EVERYONE_USER": mqtt_everyone_creds.get("user"),
+                "EVERYONE_PASSWORD": mqtt_everyone_creds.get("password"),
+                "EMQX_DASH_ADMIN_USER": emqx_dash_admin_creds.get("user"),
+                "EMQX_DASH_ADMIN_PASSWORD": emqx_dash_admin_creds.get("password"),
             },
         )
         app_container.add_port_mappings(

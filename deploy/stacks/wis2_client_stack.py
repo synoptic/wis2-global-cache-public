@@ -31,9 +31,9 @@ class Wis2ClientClusterStack(Stack):
 
 
 class Wis2ClientStack(Stack):
-    def __init__(self, scope: Construct, construct_id: str, cluster: ecs.Cluster, broker_connection_secret_arn: str, queue_name: str, bucket_name:str, **kwargs) -> None:
+    def __init__(self, scope: Construct, construct_id: str, cluster: ecs.Cluster, broker_connection_string: str, queue_name: str, bucket_name:str, **kwargs) -> None:
         super().__init__(scope, construct_id,
-                         description=f"Client to listen for messages from {broker_connection_secret_arn} for WMO/WIS2.0 Global Cache.",
+                         description=f"Client to listen for messages from {broker_connection_string} for WMO/WIS2.0 Global Cache.",
                          **kwargs)
         vpc = cluster.vpc
 
@@ -74,24 +74,18 @@ class Wis2ClientStack(Stack):
                                                  memory_limit_mib=1024,
                                                  task_role=task_role)
 
-        # get wis2.0 global broker credentials from secrets manager
-        global_broker_string = sm.Secret.from_secret_attributes(self, f"{construct_id}-broker-string",
-                                                                    secret_complete_arn=broker_connection_secret_arn)
-
         app_container = fargate_task.add_container(
             f"{construct_id}-container",
             logging=ecs.AwsLogDriver(stream_prefix=construct_id, log_retention=alogs.RetentionDays.ONE_WEEK),
 
             image=ecs.ContainerImage.from_registry(asset.image_uri),
             essential=True,
-            secrets={
-                "WIS2_BROKER_CONNECTION": ecs.Secret.from_secrets_manager(secret=global_broker_string, field="connection_string"),
-            }
         )
 
         # Set container env variables
         app_container.add_environment("QUEUE_NAME", queue_name)
         app_container.add_environment("BUCKET_NAME", bucket_name)
+        app_container.add_environment("GB_CONNECTION_STRING", broker_connection_string)
 
         self.service = fargate_service = ecs.FargateService(
             self, f"{construct_id}-service",

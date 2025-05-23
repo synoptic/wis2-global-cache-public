@@ -27,7 +27,7 @@ class Wis2S3Bucket(Stack):
         # Add a bucket policy to allow access from the WIS2.0 Manager Lambda role via role_arn
         self.bucket.grant_put(iam.Role.from_role_arn(self, "wis2-lambda-manager-role", role_arn))
 
-        # allow put and get objects for any authenticated user in the account
+        # allow put and get objects for any authenticated user in the account FOR DEV
         self.bucket.grant_read(iam.AccountPrincipal(f"{os.getenv('CDK_DEFAULT_ACCOUNT')}"))
         self.bucket.grant_write(iam.AccountPrincipal(f"{os.getenv('CDK_DEFAULT_ACCOUNT')}"))
 
