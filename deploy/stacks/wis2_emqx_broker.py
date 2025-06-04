@@ -157,14 +157,14 @@ class EmqxBrokerStack(Stack):
         self.service = ecs_patterns.NetworkMultipleTargetGroupsFargateService(
             self,
             f"{construct_id}-service",
-            # memory_limit_mib=memory_footprint,
-            assign_public_ip=True,
+            assign_public_ip=False,  # Place tasks in private subnets
             desired_count=3,
             task_definition=fargate_task,
             cluster=self.cluster,
             load_balancers=[
                 ecs_patterns.NetworkLoadBalancerProps(
                     name=f"{construct_id}-lb",
+                    public_load_balancer=True,  # Ensure the load balancer is internet-facing
                     listeners=[
                         ecs_patterns.NetworkListenerProps(
                             name=f"{construct_id}-default-listener",
