@@ -96,12 +96,16 @@ class MetricsLambdaStack(Stack):
             domain_name=f"{metrics_record_name}.{hosted_zone_domain_name}"
         )
 
-        route53.ARecord(
+        # Use CfnRecordSet for better control over DNS record management
+        route53.CfnRecordSet(
             self, f"{construct_id}-metrics-record",
-            zone=wis2_zone,
-            target=route53.RecordTarget.from_alias(r53_targets.ApiGateway(api)),
-            record_name=metrics_record_name,
-            delete_existing=True
+            hosted_zone_id=wis2_zone.hosted_zone_id,
+            name=f"{metrics_record_name}.{hosted_zone_domain_name}",
+            type="A",
+            alias_target=route53.CfnRecordSet.AliasTargetProperty(
+                dns_name=api.domain_name.domain_name_alias_domain_name,
+                hosted_zone_id=api.domain_name.domain_name_alias_hosted_zone_id
+            )
         )
 
         CfnOutput(

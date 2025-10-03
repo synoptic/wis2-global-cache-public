@@ -242,12 +242,17 @@ class EmqxBrokerStack(Stack):
         # add to existing hosted zone
         # create alias DNS record
         wis2_zone = r53.HostedZone.from_lookup(self, id=zone_id, domain_name=zone_domain_name)
-        cache_lb_alias = r53.ARecord(self, f"{construct_id}-dns-alias",
-                                     delete_existing=True,
-                                     zone=wis2_zone,
-                                     record_name=a_record_name,
-                                     target=r53.RecordTarget.from_alias(
-                                         r53_targets.LoadBalancerTarget(self.service.load_balancer)))
+        # Use CfnRecordSet for better control over DNS record management
+        cache_lb_alias = r53.CfnRecordSet(
+            self, f"{construct_id}-dns-alias",
+            hosted_zone_id=wis2_zone.hosted_zone_id,
+            name=f"{a_record_name}.{zone_domain_name}",
+            type="A",
+            alias_target=r53.CfnRecordSet.AliasTargetProperty(
+                dns_name=self.service.load_balancer.load_balancer_dns_name,
+                hosted_zone_id=self.service.load_balancer.load_balancer_canonical_hosted_zone_id
+            )
+        )
         # get the lb alias host
         self.broker_url = ".".join([a_record_name, zone_domain_name])
         CfnOutput(self, "BrokerURL", value=self.broker_url)
