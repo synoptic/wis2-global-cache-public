@@ -86,34 +86,55 @@ class Wis2Message:
             new_dt = ".".join([dt_parts[0], dt_seconds])
             self.pubtime_epoch = dt.strptime(new_dt, '%Y-%m-%dT%H:%M:%S.%fZ').timestamp()
 
+    def get_source_link(self) -> str:
+        """Extract source link from message and set related attributes.
 
+        Returns:
+            Source URL href string.
 
-
-    def get_source_link(self):
+        Raises:
+            TypeError: If no canonical or update link found.
+            ValueError: If URL cannot be parsed.
         """
-        parses the url from the message
-        Parameters
-        ----------
-        msg: dict - message from wis2 broker
-
-        Returns
-        -------
-        str - url to download data from
-        """
-        # at this point, we do assume that the msg and data are unique and should be cached
-
+        # Find appropriate link
         canonical_link = [link for link in self.links if link['rel'] == 'canonical']
         update_link = [link for link in self.links if link['rel'] == 'update']
         src_link = update_link[0] if update_link else canonical_link[0] if canonical_link else None
-        # todo - add support for delete operation
+
         if not src_link:
-            # raise error to catch elsewhere
             raise TypeError("missing canonical or update link")
+
         link_href = src_link['href']
-        setattr(self, 'src_link', src_link)
-        setattr(self, 'filename', link_href.split("/")[-1])
-        setattr(self, 'dataserver', urllib.parse.urlparse(link_href).netloc)
-        return link_href
+
+        # basic sanity check
+        if not link_href or not link_href.strip():
+            raise ValueError(f"Empty URL in message {self.data_id}")
+
+        # extract components
+        try:
+            parsed = urllib.parse.urlparse(link_href)
+            # handle edge cases gracefully
+            path = parsed.path.rstrip('/')
+            filename = path.split('/')[-1] if path else ''
+
+            # Log warning for edge cases but don't fail
+            if not filename:
+                print(f"Warning: Could not extract filename from URL {link_href} in message {self.data_id}")
+                filename = 'unknown'
+
+            if not parsed.netloc:
+                raise ValueError(f"Invalid URL structure (no hostname): {link_href}")
+
+            # Set attributes
+            self.src_link = src_link
+            self.filename = urllib.parse.unquote(filename)  # Decode percent-encoded filenames
+            self.dataserver = parsed.netloc
+
+            return link_href
+
+        except Exception as e:
+            # Add context for debugging
+            raise ValueError(f"Failed to parse URL for message {self.data_id}: {e}") from e
 
     def check_cache(self):
         """
