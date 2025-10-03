@@ -39,12 +39,11 @@ A number of foundational components are required to deploy the WIS2.0 Global Cac
 * Domain Name System (DNS) configuration 
   * A Route 53 hosted zone
   * A registered domain name
+  * A cert for ssl/tls with associated records in the hosted zone
 * NAT Gateways (2) for static IP addresses
-
-and
 * An S3 bucket where the assets are stored
   * this is currently managed by the UKMet office and provided by ASDI
-  * the necessary role to which the necessary permissions are attached. Currently the `WIS2ManagerLambdaRole` referenced in the wis2_lambda_stack.py.
+* the necessary role to which the necessary permissions are attached. Currently, the `WIS2ManagerLambdaRole` referenced in the wis2_lambda_stack.py.
 
 #### 3.1.2. AWS CDK (Cloud Development Kit)
 
