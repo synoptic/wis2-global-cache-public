@@ -13,16 +13,13 @@ from aws_cdk.aws_ecr_assets import DockerImageAsset, Platform
 
 
 class Wis2ClientClusterStack(Stack):
-    def __init__(self, scope: Construct, construct_id: str, vpc_id: str = None, **kwargs) -> None:
+    def __init__(self, scope: Construct, construct_id: str, vpc_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id,
                          description=f"Cluster for WMO/WIS2.0 Global Cache clients.",
                          **kwargs)
 
-        # Use provided VPC ID or fall back to default VPC
-        if vpc_id:
-            vpc = ec2.Vpc.from_lookup(self, "wis2-client-vpc", vpc_id=vpc_id)
-        else:
-            vpc = ec2.Vpc.from_lookup(self, "wis2-client-default-vpc", is_default=True)
+        # Use provided VPC ID
+        vpc = ec2.Vpc.from_lookup(self, "wis2-client-vpc", vpc_id=vpc_id)
 
         self.cluster = ecs.Cluster(
             self, f'{construct_id}-cluster',
@@ -31,11 +28,22 @@ class Wis2ClientClusterStack(Stack):
 
 
 class Wis2ClientStack(Stack):
-    def __init__(self, scope: Construct, construct_id: str, cluster: ecs.Cluster, broker_connection_string: str, queue_name: str, bucket_name:str, **kwargs) -> None:
+    def __init__(self, scope: Construct, construct_id: str, cluster: ecs.Cluster, broker_connection_string: str, queue_name: str,bucket_name:str, subnet_ids: list=None, **kwargs) -> None:
         super().__init__(scope, construct_id,
                          description=f"Client to listen for messages from {broker_connection_string} for WMO/WIS2.0 Global Cache.",
                          **kwargs)
         vpc = cluster.vpc
+
+        # create subnets from provided subnet IDs
+        if subnet_ids:
+            private_subnets = []
+            for i, subnet_id in enumerate(subnet_ids):
+                private_subnet = ec2.Subnet.from_subnet_attributes(
+                    self, f"private-subnet-{i}",
+                    subnet_id=subnet_id
+                )
+                private_subnets.append(private_subnet)
+            self.subnets = ec2.SubnetSelection(subnets=private_subnets)
 
         # Security group to allow MQTT traffic
         mqtt_security_group = ec2.SecurityGroup(self, f"{construct_id}-mqtt-security",
@@ -89,10 +97,12 @@ class Wis2ClientStack(Stack):
 
         self.service = fargate_service = ecs.FargateService(
             self, f"{construct_id}-service",
-            assign_public_ip=True,
+            assign_public_ip=False,
             desired_count=1,
             security_groups=[mqtt_security_group],
             task_definition=fargate_task,
-            cluster=cluster
+            cluster=cluster,
+            # use subnets in cluster.subnets (list)
+            vpc_subnets=self.subnets
         )
         self.service_name = fargate_service.service_name
