@@ -17,6 +17,7 @@ class MetricsLambdaStack(Stack):
                  metrics_record_name: str,
                  private_subnet_ids: list,
                  cert_arn: str,
+                 report_by: str,
                  vpc_id: str = None,
                  memory_size: int = 128,
                  **kwargs) -> None:
