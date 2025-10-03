@@ -4,6 +4,8 @@ import os
 import redis
 
 cache_endpoint = os.environ.get('REDIS_ENDPOINT')
+# report_by from environment variable, with fallback to the original value
+report_by = os.environ.get('REPORT_BY', 'data-metoffice-noaa-global-cache')
 
 
 def handler(event, context):
@@ -46,7 +48,7 @@ def handler(event, context):
         labels = f"{metric_name}{{centre_id=\"{metric_ob['centre_id']}\""
         if metric_ob.get('dataserver'):
             labels += f",dataserver=\"{metric_ob['dataserver']}\""
-        labels += ",report_by=\"data-metoffice-noaa-global-cache\""
+        labels += f",report_by=\"{report_by}\""
         labels += "}"
         metrics_line += f"{labels} {metric_ob['value']}"
         metrics[metric_name]['set'].append(metrics_line)

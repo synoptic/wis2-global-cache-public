@@ -120,6 +120,7 @@ metrics_lambda_stack = MetricsLambdaStack(
     cert_arn=cert_arn,
     vpc_id=vpc_id,
     memory_size=128,
+    report_by=os.environ.get('REPORT_BY', 'data-metoffice-noaa-global-cache'),
     env=env
 )
 
