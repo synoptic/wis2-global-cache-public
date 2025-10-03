@@ -59,7 +59,10 @@ class MetricsLambdaStack(Stack):
             handler="gc_metrics_handler.handler",
             vpc=vpc,
             vpc_subnets=private_subnets,
-            environment={'REDIS_ENDPOINT': redis_endpoint},
+            environment={
+                'REDIS_ENDPOINT': redis_endpoint,
+                'REPORT_BY': report_by
+            },
             memory_size=memory_size
         )
 
