@@ -159,12 +159,14 @@ class EmqxBrokerStack(Stack):
             f"{construct_id}-service",
             assign_public_ip=False,  # Place tasks in private subnets
             desired_count=3,
+            # 3-task service - 67% allows 1 task to be replaced at a time
+            min_healthy_percent=67,
             task_definition=fargate_task,
             cluster=self.cluster,
             load_balancers=[
                 ecs_patterns.NetworkLoadBalancerProps(
                     name=f"{construct_id}-lb",
-                    public_load_balancer=True,  # Ensure the load balancer is internet-facing
+                    public_load_balancer=True,
                     listeners=[
                         ecs_patterns.NetworkListenerProps(
                             name=f"{construct_id}-default-listener",

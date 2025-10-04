@@ -99,6 +99,7 @@ class Wis2ClientStack(Stack):
             self, f"{construct_id}-service",
             assign_public_ip=False,
             desired_count=1,
+            min_healthy_percent=100,
             security_groups=[mqtt_security_group],
             task_definition=fargate_task,
             cluster=cluster,
