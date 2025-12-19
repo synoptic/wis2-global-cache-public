@@ -7,18 +7,22 @@ import traceback
 import urllib
 from copy import deepcopy
 from enum import Enum
+from typing import Any
 from uuid import uuid4
 from datetime import datetime as dt
 import requests
 import boto3
 import shutil
 
-def nested_get(d, keys):
-    """
-    gets value of nested key/s in dict
-    :param d: dict
-    :param keys: list of keys
-    :return: value of nested key
+def nested_get(d: dict, keys: list) -> Any:
+    """Gets value of nested key/s in dict.
+
+    Args:
+        d: Dictionary to search.
+        keys: List of keys to traverse.
+
+    Returns:
+        Value of nested key or None if not found.
     """
     for key in keys:
         try:
@@ -34,6 +38,12 @@ class Wis2Message:
     # not using json schema validation at this time, but could
     # https://github.com/wmo-im/wis2-notification-message/blob/main/schemas/wis2-notification-message-bundled.json
     def __init__(self, msg_data: dict, env: dict = None):
+        """Initializes Wis2Message.
+
+        Args:
+            msg_data: The WIS2 message dictionary.
+            env: Environment configuration dictionary.
+        """
         self.pubtime_epoch = None
         self.env = env
         self.msg = msg_data
@@ -47,14 +57,13 @@ class Wis2Message:
             "gzip"
         ]
         self.dataserver = None
-        self.src_link = None
+        self.src_link = self.get_source_link()
 
     def init_parse(self):
-        """
-        Initializes the parsing of the WIS2 message and sets required attributes.
+        """Initializes parsing of WIS2 message and sets attributes.
 
         Raises:
-            Exception: If any of the required keys are missing in the message.
+            Exception: If required keys are missing.
         """
         required_keys = {
             'id': ['id'],
@@ -87,7 +96,7 @@ class Wis2Message:
             self.pubtime_epoch = dt.strptime(new_dt, '%Y-%m-%dT%H:%M:%S.%fZ').timestamp()
 
     def get_source_link(self) -> str:
-        """Extract source link from message and set related attributes.
+        """Extracts source link from message.
 
         Returns:
             Source URL href string.
@@ -99,10 +108,15 @@ class Wis2Message:
         # Find appropriate link
         canonical_link = [link for link in self.links if link['rel'] == 'canonical']
         update_link = [link for link in self.links if link['rel'] == 'update']
-        src_link = update_link[0] if update_link else canonical_link[0] if canonical_link else None
+        # support deletion links as well
+        delete_link = [link for link in self.links if link['rel'] == 'deletion']
+        if delete_link:
+            src_link = delete_link[0]
+        else:
+            src_link = update_link[0] if update_link else canonical_link[0] if canonical_link else None
 
         if not src_link:
-            raise TypeError("missing canonical or update link")
+            raise TypeError("missing src link")
 
         link_href = src_link['href']
 
@@ -136,12 +150,16 @@ class Wis2Message:
             # Add context for debugging
             raise ValueError(f"Failed to parse URL for message {self.data_id}: {e}") from e
 
-    def check_cache(self):
+    def check_cache(self) -> bool:
+        """Checks if the message should be cached.
+
+        Returns:
+            True if message should be cached, False otherwise.
         """
-        checks if the message should be cached
-        -------
-        bool - whether to cache the message
-        """
+        # first check if is delete message
+        delete_link = [link for link in self.links if link['rel'] == 'deletion']
+        if delete_link:
+            return False
         # check if cache property exists and or is set
         cache_msg_value = nested_get(self.msg, ['properties', 'cache'])
         if cache_msg_value is None: cache_msg_value = True
@@ -150,15 +168,14 @@ class Wis2Message:
         else:
             return True
 
-    def is_unique(self, last_cache):
-        """
-        determines if the message should be processed
-        Parameters
-        ----------
-        last_cache - float - epoch time of last cache or None
-        Returns
-        -------
-        bool - whether to cache the message
+    def is_unique(self, last_cache: float | None) -> bool:
+        """Determines if the message is new compared to cache.
+
+        Args:
+            last_cache: Epoch time of last cache or None.
+
+        Returns:
+            True if message is unique/new, False otherwise.
         """
         # check if cache property exists
         if last_cache is None:
@@ -167,18 +184,26 @@ class Wis2Message:
         if self.pubtime_epoch <= last_cache:
             return False
         else:
-            # check if update link exists
-            if any([link for link in self.links if link['rel'] == 'update']):
+            # check if update or delete link exists
+            if any([link for link in self.links if link['rel'] in ['update', 'deletion']]):
                 return True
             else:
                 return False
         return True
 
-    def cache_msg_data(self, use_content: bool = False):
+    def cache_msg_data(self, use_content: bool = False) -> bytes:
+        """Caches message data from content or download.
+
+        Args:
+            use_content: If True, use inline content; else download.
+
+        Returns:
+            The data bytes.
+
+        Raises:
+            Exception: If encoding is unknown or unsupported.
         """
-        caches the message data
-        """
-        dnld_link = self.get_source_link()
+        dnld_link = self.src_link
         dndld_keys = {'content': ['properties', 'content', 'value'],
                       'encoding': ['properties', 'content', 'encoding'],
                       'size': ['properties', 'content', 'size']}
@@ -207,9 +232,14 @@ class Wis2Message:
         return data_bytes
 
     # function to set the integrity block if it is missing from the message
-    def set_integrity_block(self, data_bytes: bytes):
-        """
-        sets the integrity block if it is missing from the message
+    def set_integrity_block(self, data_bytes: bytes) -> dict:
+        """Sets integrity block if missing.
+
+        Args:
+            data_bytes: The data to calculate hash for.
+
+        Returns:
+            The integrity block dictionary.
         """
         if self.integrity_block is None:
             # set the integrity block
@@ -223,7 +253,12 @@ class Wis2Message:
             }
         return self.integrity_block
 
-    def format_cache_msg(self):
+    def format_cache_msg(self) -> dict:
+        """Formats the message for caching.
+
+        Returns:
+            The modified message dictionary for the cache.
+        """
         # message is the same, except for the msg_id (id is new uuid), links (new canonical link),
         # and change the topic channel to cache
         # "type" (mimetype) should be retained from the original message.
@@ -231,6 +266,8 @@ class Wis2Message:
         cache_msg = self.msg
         # update msg_id
         cache_msg['id'] = self.new_uuid
+        # set the global cache property
+        cache_msg['properties']['global-cache'] = os.getenv('REPORT_BY')
         # drop the topic
         try:
             cache_msg.pop('topic')
@@ -248,27 +285,27 @@ class Wis2Message:
         return cache_msg
 
     @staticmethod
-    def get_dt_str():
-        # RFC3339
-        """
-        gets current datetime in RFC3339 format
-        Returns - str of current datetime in RFC3339 format
-        -------
+    def get_dt_str() -> str:
+        """Gets current datetime in RFC3339 format.
 
+        Returns:
+            Current datetime string.
         """
         return dt.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
 
-    def download_file(self, href: str, tmp_dir: str = '/tmp/'):
-        """
-        downloads file from url to filename
-        Parameters
-        ----------
-        href - str - url to download from
-        tmp_dir - str - directory to save to
+    def download_file(self, href: str, tmp_dir: str = '/tmp/') -> str:
+        """Downloads file from URL to temporary directory.
 
-        Returns
-        -------
-        tmp_path - path to downloaded file
+        Args:
+            href: URL to download from.
+            tmp_dir: Directory to save to.
+
+        Returns:
+            Path to downloaded file.
+
+        Raises:
+            IOError: If disk space is insufficient.
+            requests.exceptions.RequestException: On download failure.
         """
         session = requests.Session()
         # Configure limited retries to fail faster
@@ -323,9 +360,14 @@ class Wis2Message:
                 os.remove(tmp_path)
             raise
 
-    def validate_integrity(self):
-        """
-        validates the data
+    def validate_integrity(self) -> bool:
+        """Validates data integrity against checksum.
+
+        Returns:
+            True if valid.
+
+        Raises:
+            Exception: If hashing method unsupported or checksum fails.
         """
         input_bytes = self.data_bytes
         valid_methods = {
@@ -350,25 +392,41 @@ class Wis2Message:
         setattr(self, 'is_valid', True)
         return True
 
-    def upload_to_bucket(self, data_bytes: bytes):
-        # get s3 client
+    def format_s3_key(self) -> str:
+        """Formats S3 bucket key path.
+
+        Returns:
+            The S3 bucket key path.
+        """
         # include a /data prefix for all cached objects
         data_prefix = 'data'
-        s3_client_obj = boto3.client('s3')
         topic_pieces = self.topic.split('/')
         # get wis2 index from topic_pieces
         topic_prefix = "/".join(topic_pieces[topic_pieces.index('wis2') + 1:])
-        bucket_path = "/".join([data_prefix, topic_prefix, self.filename])
-        setattr(self, 'bucket_path', bucket_path)
+        s3_key = "/".join([data_prefix, topic_prefix, self.filename])
+        return s3_key
+
+    def upload_to_bucket(self, data_bytes: bytes) -> str:
+        """Uploads data bytes to S3 bucket.
+
+        Args:
+            data_bytes: Data to upload.
+
+        Returns:
+            The bucket path key.
+        """
+
+        s3_client_obj = boto3.client('s3')
+        s3_key = self.format_s3_key()
         # construct download url
         dnld_url = os.path.join(f"https://{self.env['s3_bucket_name']}.s3.amazonaws.com",
-                                bucket_path)
+                                s3_key)
         setattr(self, 'dnld_url', dnld_url)
 
         if os.environ.get('DEV-MODE', 'False') in ['True', 'true', '1']:
-            print(f"dev no upload: {self.bucket_path}")
-            return self.bucket_path
+            print(f"dev no upload: {s3_key}")
+            return s3_key
         s3_client_obj.upload_fileobj(Fileobj=io.BytesIO(data_bytes), Bucket=self.env['s3_bucket_name'],
-                                     Key=self.bucket_path)
-        return self.bucket_path
+                                     Key=s3_key)
+        return s3_key
 

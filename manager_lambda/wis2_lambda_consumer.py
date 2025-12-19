@@ -186,7 +186,6 @@ def msg_handler(msg_batch, context):
     # setup metrics
     # metrics.set_property("MetricName", "WIS2GlobalCache")
     # check if 'Records' key exists in msg_batch
-    wis2_msg = None
     if 'Records' in msg_batch:
         msg_batch = msg_batch['Records']
     batch_item_failures = []
@@ -195,6 +194,7 @@ def msg_handler(msg_batch, context):
         msg_batch = [msg_batch]
 
     for sqs_msg in msg_batch:
+        wis2_msg = None
         try:
             # if body is a string, convert to dict
             if isinstance(sqs_msg['body'], str):
@@ -322,10 +322,13 @@ def msg_handler(msg_batch, context):
             logger.error(f"error msg: {json.dumps(error_msg)}")
             # metrics
             # todo - move parsing of these metrics components and or the metrics interactions to a different place
+            ds_name = 'unknown_dataserver'
+            if wis2_msg is not None and wis2_msg.dataserver is not None:
+                ds_name = wis2_msg.dataserver
             dnld_error_total = cache_metric(redis_host, "|".join(
-                [msg_centre, wis2_msg.dataserver, 'wmo_wis2_gc_downloaded_errors_total']), cache_value=1,
+                [msg_centre, ds_name, 'wmo_wis2_gc_downloaded_errors_total']), cache_value=1,
                                             operation='inc')
-            if wis2_msg.dataserver is not None:
+            if wis2_msg.dataserver is not None and wis2_msg.dataserver is not None:
                 dataserver_status = cache_metric(redis_host, "|".join(
                     [msg_centre, wis2_msg.dataserver, 'wmo_wis2_gc_dataserver_status_flag']), cache_value=0,
                                                  operation='set')

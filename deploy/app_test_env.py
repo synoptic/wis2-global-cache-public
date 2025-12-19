@@ -107,6 +107,7 @@ manager_lambda_stack = Wis2ManagerLambdaStack(
     publisher_secret=os.getenv('PUBLISHER_CREDS'),
     lambda_role_arn=lambda_role_arn,
     include_insights=True,
+    report_by=os.environ.get('REPORT_BY', 'io-wis2dev-global-cache'),
     env=env
 )
 manager_lambda_stack.add_dependency(wis2_sqs_stack)
