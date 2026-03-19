@@ -56,23 +56,10 @@ def on_connect(client, userdata, flags, reason_code, properties):
 
 def on_disconnect(client, userdata, disconnect_flags, reason_code, properties):
     if reason_code == 0:
-        # success disconnect
         logger.warning("Disconnected successfully with reason code 0")
-        pass
-    if reason_code > 0:
-        # error processing
-        logger.error("Unexpected disconnection.")
-        # Implement reconnection logic with exponential backoff
-        backoff_time = 1  # initial backoff time in seconds
-        while not client.is_connected():
-            try:
-                client.reconnect()
-                logger.info("Reconnected successfully")
-                break  # exit the loop if reconnected successfully
-            except Exception as e:
-                logger.error(f"Reconnection failed, sleeping for {backoff_time} seconds", exc_info=True)
-                time.sleep(backoff_time)  # Wait before retrying
-                backoff_time = min(backoff_time * 2, 60)  # Exponential backoff with a max of 60 seconds
+    else:
+        logger.error(f"Unexpected disconnection with reason code {reason_code}.")
+        # loop_forever() handles reconnection automatically — don't do it manually here
 
 def on_message(client, userdata, message):
     global id_cache
@@ -152,7 +139,8 @@ def main():
 
     properties = Properties(PacketTypes.CONNECT)
     properties.SessionExpiryInterval = SESSION_EXPIRY
-    client.tls_set()
+    if os.getenv('MQTT_TLS', 'true').lower() != 'false':
+        client.tls_set()
     # client.will_set(
     #     topic="cache/a/wis2/+/status",
     #     payload=json.dumps({"status": "disconnected", "client_id": MQTT_CLIENT_ID}),
@@ -168,8 +156,17 @@ def main():
     logger.debug(f"Connection status: {client.is_connected()}")
     client.enable_logger(logger)
 
-    threading.Thread(target=monitor_in_flight, args=(client,)).start()
-    client.loop_forever()
+    threading.Thread(target=monitor_in_flight, args=(client,), daemon=True).start()
+
+    while True:
+        try:
+            client.loop_forever()
+        except KeyError as e:
+            logger.error(f"MQTT protocol error (likely invalid reason code): {e}. Restarting loop...")
+            time.sleep(5)
+        except Exception as e:
+            logger.error(f"Unexpected error in MQTT loop: {e}. Restarting loop...", exc_info=True)
+            time.sleep(5)
 
 if __name__ == "__main__":
     main()
