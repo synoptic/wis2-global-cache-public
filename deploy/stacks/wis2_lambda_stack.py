@@ -27,6 +27,7 @@ class Wis2ManagerLambdaStack(Stack):
                  cache_bucket_name: str,
                  cache_bucket_region: str,
                  memory_footprint: int,
+                 report_by: str,
                  vpc_id: str = None,
                  subnet_ids: list = None,
                  publisher_secret: str = None,
@@ -100,7 +101,8 @@ class Wis2ManagerLambdaStack(Stack):
                 "MQTT_PUB_PASSWORD": wis2_mqtt_publisher.get('password'),
                 "MQTT_PUB_USER": wis2_mqtt_publisher.get('user'),
                 "MQTT_BROKER_HOST": broker_url,
-                "CACHE_ENDPOINT": cache_endpoint
+                "CACHE_ENDPOINT": cache_endpoint,
+                "REPORT_BY": report_by
             },
             insights_version=_lambda.LambdaInsightsVersion.VERSION_1_0_119_0 if include_insights else None,
             dead_letter_queue_enabled=True,
