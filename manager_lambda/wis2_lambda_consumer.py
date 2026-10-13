@@ -195,6 +195,7 @@ def msg_handler(msg_batch, context):
 
     for sqs_msg in msg_batch:
         wis2_msg = None
+        msg_centre = None
         try:
             # if body is a string, convert to dict
             if isinstance(sqs_msg['body'], str):
@@ -218,7 +219,8 @@ def msg_handler(msg_batch, context):
                         # print(f'caching: {wis2_msg.data_id}-{wis2_msg.pubtime}')
                         cached_bytes = wis2_msg.cache_msg_data(use_content=True)
                     except TypeError:
-                        print(f"bad source link, skipping: {wis2_msg.data_id}")
+                        logger.warning("bad source link, message dropped: data_id=%r", wis2_msg.data_id,
+                                       extra={"data_id": wis2_msg.data_id, "topic": wis2_msg.topic})
                         continue
                     try:
                         # check if integrity block exists
@@ -307,19 +309,28 @@ def msg_handler(msg_batch, context):
             broker = brokers[0]
             client_id = f"wis2_{randint(0, 100000000)}"
             error_topic = "/".join(error_topic)
-            paho.mqtt.publish.single(
-                error_topic,
-                json.dumps(error_msg),
-                hostname=broker['host'],
-                auth={'username': broker['username'], 'password': broker['password']},
-                port=broker['port'],
-                client_id=client_id,
-                protocol=mqtt.MQTTv5,
-                qos=1,
-                tls={'ca_certs': None, 'tls_version': ssl.PROTOCOL_TLSv1_2, 'insecure': True}
-            )
-            logger.error(f"published error msg: {error_topic}")
+            try:
+                paho.mqtt.publish.single(
+                    error_topic,
+                    json.dumps(error_msg),
+                    hostname=broker['host'],
+                    auth={'username': broker['username'], 'password': broker['password']},
+                    port=broker['port'],
+                    client_id=client_id,
+                    protocol=mqtt.MQTTv5,
+                    qos=1,
+                    tls={'ca_certs': None, 'tls_version': ssl.PROTOCOL_TLSv1_2, 'insecure': True}
+                )
+                logger.error(f"published error msg: {error_topic}")
+            except Exception:
+                logger.error("failed to publish error msg: topic=%r", error_topic, exc_info=True,
+                             extra={"topic": error_topic, "sqs_message_id": sqs_msg['messageId']})
             logger.error(f"error msg: {json.dumps(error_msg)}")
+            if msg_centre is None:
+                # the message never parsed far enough to identify a centre, so no download was attempted
+                logger.error("message not parsed; download metrics not updated: sqs_message_id=%r",
+                             sqs_msg['messageId'], extra={"sqs_message_id": sqs_msg['messageId']})
+                continue
             # metrics
             # todo - move parsing of these metrics components and or the metrics interactions to a different place
             ds_name = 'unknown_dataserver'
@@ -328,7 +339,7 @@ def msg_handler(msg_batch, context):
             dnld_error_total = cache_metric(redis_host, "|".join(
                 [msg_centre, ds_name, 'wmo_wis2_gc_downloaded_errors_total']), cache_value=1,
                                             operation='inc')
-            if wis2_msg.dataserver is not None and wis2_msg.dataserver is not None:
+            if wis2_msg is not None and wis2_msg.dataserver is not None:
                 dataserver_status = cache_metric(redis_host, "|".join(
                     [msg_centre, wis2_msg.dataserver, 'wmo_wis2_gc_dataserver_status_flag']), cache_value=0,
                                                  operation='set')
