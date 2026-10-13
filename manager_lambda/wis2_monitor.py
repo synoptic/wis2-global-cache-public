@@ -25,6 +25,8 @@ SEVERITIES = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
 
 _CENTRE_ID = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)+$")
 _URL = re.compile(r"[a-zA-Z][a-zA-Z0-9+.-]*://[^\s'\"<>]+")
+# urllib3 errors render scheme-less paths, e.g. "url: /path?X-Amz-Signature=..."
+_BARE_QUERY = re.compile(r"\?[^\s'\"<>()]*")
 _CONTROL = re.compile(r"[\x00-\x1f\x7f]")
 _TITLE_MAX_CHARS = 256
 
@@ -85,6 +87,7 @@ def sanitize_text(text: str, max_chars: int) -> str:
         Sanitized, length-bounded text.
     """
     cleaned = _URL.sub(lambda m: strip_url_query(m.group(0)), str(text))
+    cleaned = _BARE_QUERY.sub("", cleaned)
     cleaned = _CONTROL.sub(" ", cleaned)
     return cleaned[:max_chars]
 

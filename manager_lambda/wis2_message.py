@@ -377,7 +377,9 @@ class Wis2Message:
             # Clean up partial download
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
-            raise DownloadError(str(e)) from e
+            # str(e) can embed the URL with its presigned query string, so it is not carried into the message
+            status = getattr(getattr(e, 'response', None), 'status_code', None)
+            raise DownloadError(f"{type(e).__name__}" + (f": HTTP {status}" if status else "")) from e
         except (IOError, OSError) as e:
             print(f"I/O error while downloading {href}: {e}")
             if os.path.exists(tmp_path):
