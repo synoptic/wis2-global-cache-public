@@ -40,7 +40,7 @@ redis_endpoint = os.environ.get('CACHE_ENDPOINT')
 redis_host = redis.Redis(redis_endpoint, port=6379, decode_responses=True)
 ttl_minutes = 360
 global dev_mode
-dev_mode = os.environ.get('DEV-MODE', 'False') not in ['True', 'true', '1']
+dev_mode = os.environ.get('DEV-MODE', 'False') in ['True', 'true', '1']
 logging.info(f"dev mode: {dev_mode}")
 
 

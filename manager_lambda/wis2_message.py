@@ -319,7 +319,7 @@ class Wis2Message:
         session.mount('http://', requests.adapters.HTTPAdapter(max_retries=retries))
         session.mount('https://', requests.adapters.HTTPAdapter(max_retries=retries))
 
-        dev_mode = os.environ.get('DEV-MODE', 'False') not in ['True', 'true', '1', True]
+        dev_mode = os.environ.get('DEV-MODE', 'False') in ['True', 'true', '1']
         tmp_path = os.path.join(tmp_dir, self.filename)
         try:
             # timeout=(10, 30) means: 10s connection timeout, 30s read timeout
