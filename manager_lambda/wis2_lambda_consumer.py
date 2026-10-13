@@ -18,7 +18,8 @@ import time
 import logging
 from enum import Enum
 import ssl
-from wis2_message import Wis2Message
+from wis2_message import Wis2Message, IntegrityError, DownloadError, TooLargeToCache
+import wis2_monitor
 
 logger = logging.getLogger()
 logger.setLevel(logging.WARN)
@@ -42,6 +43,117 @@ ttl_minutes = 360
 global dev_mode
 dev_mode = os.environ.get('DEV-MODE', 'False') in ['True', 'true', '1']
 logging.info(f"dev mode: {dev_mode}")
+report_by = os.environ.get('REPORT_BY')
+# applies to the non-normative download/integrity events only; gs:182 not-cached events are never limited
+wme_rate_limit = int(os.environ.get('WME_RATE_LIMIT', '60'))
+wme_rate_window_seconds = int(os.environ.get('WME_RATE_WINDOW_SECONDS', '300'))
+
+
+def publish(topic: str, payload, broker: dict) -> None:
+    """Publishes one message to a broker with the WIS2 MQTT parameters (QoS 1, no retain).
+
+    Args:
+        topic: MQTT topic.
+        payload: str or bytes payload.
+        broker: Broker connection dict from ``brokers``.
+    """
+    paho.mqtt.publish.single(
+        topic,
+        payload,
+        hostname=broker['host'],
+        auth={'username': broker['username'], 'password': broker['password']},
+        port=broker['port'],
+        client_id=f"wis2_{randint(0, 100000000)}",
+        protocol=mqtt.MQTTv5,
+        qos=1,
+        tls={'ca_certs': None, 'tls_version': ssl.PROTOCOL_TLSv1_2, 'insecure': True}
+    )
+
+
+def publish_wme(wis2_msg: Wis2Message, event_type: str, severity: str, title: str, description: str = None,
+                dedup_suffix: str = None, rate_limited: bool = True) -> bool:
+    """Publishes one WME about the data item in wis2_msg, at most once per item and event.
+
+    Never raises: a monitoring failure must not affect caching.
+
+    Args:
+        wis2_msg: The notification message the event is about.
+        event_type: WME event type.
+        severity: WME severity.
+        title: Event title.
+        description: Optional event description.
+        dedup_suffix: Extra dedup key part, e.g. the data server for per-source failures.
+        rate_limited: Apply the per (subject, type) rate limit.
+
+    Returns:
+        True if the event was published.
+    """
+    dedup_key = None
+    log_ctx = {"event_type": event_type, "data_id": wis2_msg.data_id, "topic": wis2_msg.topic}
+    try:
+        if not wis2_monitor.is_centre_id(report_by):
+            logger.error("REPORT_BY is not a valid centre-id; WME not published: report_by=%r", report_by,
+                         extra=log_ctx)
+            return False
+        subject = wis2_msg.topic.split('/')[3]
+        wme = wis2_monitor.build_wme(event_type, severity, report_by, subject, title, description,
+                                     channel=wis2_msg.topic)
+        topic = wis2_monitor.monitor_topic(subject)
+        payload = wis2_monitor.encode_wme(wme)
+        dedup_key = "|".join(["wme", event_type, wis2_msg.data_id, wis2_msg.pubtime] +
+                             ([dedup_suffix] if dedup_suffix else []))
+        if not wis2_monitor.claim_event(redis_host, dedup_key, ttl_minutes * 60):
+            return False
+        if rate_limited and not wis2_monitor.within_rate_limit(
+                redis_host, subject, event_type, wme_rate_limit, wme_rate_window_seconds, time.time()):
+            return False
+        for broker in brokers:
+            publish(topic, payload, broker)
+        logger.warning("published WME: type=%r subject=%r data_id=%r", event_type, subject, wis2_msg.data_id,
+                       extra={**log_ctx, "wme_id": wme['id'], "monitor_topic": topic})
+        return True
+    except Exception:
+        logger.error("failed to publish WME: type=%r data_id=%r", event_type, wis2_msg.data_id, exc_info=True,
+                     extra=log_ctx)
+        if dedup_key is not None:
+            # release the claim so a later copy of the notification can retry the event
+            try:
+                redis_host.delete(dedup_key)
+            except Exception:
+                logger.error("failed to release WME claim: key=%r", dedup_key, exc_info=True, extra=log_ctx)
+        return False
+
+
+def fetch_validated(wis2_msg: Wis2Message) -> bytes:
+    """Gets the resource bytes, preferring embedded content, and validates integrity.
+
+    Embedded content that fails integrity falls back to the URL (Guide 2.7.4.1).
+
+    Args:
+        wis2_msg: Message whose resource is fetched.
+
+    Returns:
+        Validated resource bytes.
+
+    Raises:
+        TooLargeToCache: The resource exceeds the cache size limit.
+        DownloadError: The resource could not be downloaded.
+        IntegrityError: The resource failed integrity validation.
+    """
+    data_bytes = wis2_msg.cache_msg_data(use_content=True)
+    try:
+        wis2_msg.validate_integrity()
+    except IntegrityError as content_error:
+        if not wis2_msg.used_content:
+            raise
+        logger.warning("embedded content failed integrity; downloading instead: data_id=%r", wis2_msg.data_id,
+                       extra={"data_id": wis2_msg.data_id, "topic": wis2_msg.topic})
+        publish_wme(wis2_msg, wis2_monitor.EVENT_ITEM_INTEGRITY, "WARNING",
+                    title=f"Embedded content does not match integrity value; downloading instead: {wis2_msg.data_id}",
+                    description=str(content_error), dedup_suffix="content")
+        data_bytes = wis2_msg.cache_msg_data(use_content=False)
+        wis2_msg.validate_integrity()
+    return data_bytes
 
 
 def timer(func):
@@ -217,22 +329,30 @@ def msg_handler(msg_batch, context):
                     # the GC should cache the message
                     try:
                         # print(f'caching: {wis2_msg.data_id}-{wis2_msg.pubtime}')
-                        cached_bytes = wis2_msg.cache_msg_data(use_content=True)
+                        cached_bytes = fetch_validated(wis2_msg)
                     except TypeError:
                         logger.warning("bad source link, message dropped: data_id=%r", wis2_msg.data_id,
                                        extra={"data_id": wis2_msg.data_id, "topic": wis2_msg.topic})
                         continue
-                    try:
-                        # check if integrity block exists
-                        if hasattr(wis2_msg, 'integrity_block'):
-                            # then validate as this is not required
-                            wis2_msg.validate_integrity()
-                    except Exception as e:
+                    except TooLargeToCache as e:
+                        # GC decision not to cache (Guide gs:182): republish as pass-through and notify via WME
+                        logger.warning("not caching oversize resource: data_id=%r", wis2_msg.data_id,
+                                       extra={"data_id": wis2_msg.data_id, "topic": wis2_msg.topic, "reason": str(e)})
+                        wis2_msg.do_cache = False
+                        publish_wme(wis2_msg, wis2_monitor.EVENT_ITEM_CACHE, "INFO",
+                                    title=f"Global Cache decided not to cache data item: {wis2_msg.data_id}",
+                                    description=f"Resource too large to cache: {e}", rate_limited=False)
+                    except IntegrityError as e:
                         print(f"failed integrity validation: {wis2_msg.data_id}")
                         integrity_status = cache_metric(redis_host, "|".join(
                             [msg_centre, 'wmo_wis2_gc_integrity_failed_total']), cache_value=1, operation='inc')
                         # metrics.put_metric("wmo_wis2_gc_integrity_failed", 1)
+                        publish_wme(wis2_msg, wis2_monitor.EVENT_ITEM_INTEGRITY, "ERROR",
+                                    title=f"Data item failed integrity check: {wis2_msg.data_id}",
+                                    description=f"{e}; source: {wis2_msg.src_link}",
+                                    dedup_suffix=wis2_msg.dataserver)
                         raise e
+                if wis2_msg.do_cache:
                     # good to go - cache the data object:
                     bucket_path = wis2_msg.upload_to_bucket(cached_bytes)
                     # done with data object - delete it
@@ -271,20 +391,7 @@ def msg_handler(msg_batch, context):
                 # send to mqtt broker/s
                 for broker in brokers:
                     try:
-                        client_id = f"wis2_{randint(0, 100000000)}"
-                        # print(f"wis2 client id: {client_id}")
-                        # Publish the message
-                        paho.mqtt.publish.single(
-                            wis2_msg.new_topic,
-                            json.dumps(notification_msg),
-                            hostname=broker['host'],
-                            auth={'username': broker['username'], 'password': broker['password']},
-                            port=broker['port'],
-                            client_id=client_id,
-                            protocol=mqtt.MQTTv5,
-                            qos=1,
-                            tls={'ca_certs': None, 'tls_version': ssl.PROTOCOL_TLSv1_2, 'insecure': True}
-                        )
+                        publish(wis2_msg.new_topic, json.dumps(notification_msg), broker)
                         # print(f"published data_id {wis2_msg.data_id} to {broker['host']} on topic {wis2_msg.new_topic}")
                     except Exception as e:
                         print(
@@ -307,20 +414,9 @@ def msg_handler(msg_batch, context):
             error_msg['error'] = {"msg": str(e), "traceback": traceback.format_exc()}
             # just the first broker for now
             broker = brokers[0]
-            client_id = f"wis2_{randint(0, 100000000)}"
             error_topic = "/".join(error_topic)
             try:
-                paho.mqtt.publish.single(
-                    error_topic,
-                    json.dumps(error_msg),
-                    hostname=broker['host'],
-                    auth={'username': broker['username'], 'password': broker['password']},
-                    port=broker['port'],
-                    client_id=client_id,
-                    protocol=mqtt.MQTTv5,
-                    qos=1,
-                    tls={'ca_certs': None, 'tls_version': ssl.PROTOCOL_TLSv1_2, 'insecure': True}
-                )
+                publish(error_topic, json.dumps(error_msg), broker)
                 logger.error(f"published error msg: {error_topic}")
             except Exception:
                 logger.error("failed to publish error msg: topic=%r", error_topic, exc_info=True,
@@ -331,6 +427,10 @@ def msg_handler(msg_batch, context):
                 logger.error("message not parsed; download metrics not updated: sqs_message_id=%r",
                              sqs_msg['messageId'], extra={"sqs_message_id": sqs_msg['messageId']})
                 continue
+            if isinstance(e, DownloadError):
+                publish_wme(wis2_msg, wis2_monitor.EVENT_ITEM_DOWNLOAD, "ERROR",
+                            title=f"Cannot download data item: {wis2_msg.src_link}",
+                            description=str(e), dedup_suffix=wis2_msg.dataserver)
             # metrics
             # todo - move parsing of these metrics components and or the metrics interactions to a different place
             ds_name = 'unknown_dataserver'

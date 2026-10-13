@@ -14,6 +14,19 @@ import requests
 import boto3
 import shutil
 
+
+class DownloadError(Exception):
+    """The resource could not be downloaded from its data server."""
+
+
+class IntegrityError(Exception):
+    """The resource failed integrity validation."""
+
+
+class TooLargeToCache(Exception):
+    """The resource exceeds the size this Global Cache will cache."""
+
+
 def nested_get(d: dict, keys: list) -> Any:
     """Gets value of nested key/s in dict.
 
@@ -211,6 +224,7 @@ class Wis2Message:
             prop_val = nested_get(self.msg, v)
             setattr(self, k, prop_val)
         data_bytes = None
+        self.used_content = bool(use_content and self.content)
         if use_content and self.content:
             if self.encoding not in self.content_encodings:
                 raise Exception(f"unknown encoding {self.encoding} for {self.data_id}")
@@ -304,8 +318,9 @@ class Wis2Message:
             Path to downloaded file.
 
         Raises:
-            IOError: If disk space is insufficient.
-            requests.exceptions.RequestException: On download failure.
+            TooLargeToCache: If the resource exceeds free /tmp space or MAX_CACHE_BYTES.
+            DownloadError: On HTTP or network failure.
+            OSError: On local file errors.
         """
         session = requests.Session()
         # Configure limited retries to fail faster
@@ -321,6 +336,10 @@ class Wis2Message:
 
         dev_mode = os.environ.get('DEV-MODE', 'False') in ['True', 'true', '1']
         tmp_path = os.path.join(tmp_dir, self.filename)
+        max_bytes = shutil.disk_usage(tmp_dir).free
+        configured_max = os.environ.get('MAX_CACHE_BYTES')
+        if configured_max:
+            max_bytes = min(max_bytes, int(configured_max))
         try:
             # timeout=(10, 30) means: 10s connection timeout, 30s read timeout
             with session.get(href, stream=True, timeout=(10, 30), verify=not dev_mode) as r:
@@ -328,17 +347,18 @@ class Wis2Message:
                 expected_size = int(r.headers.get('content-length', 0))
                 downloaded_size = 0
 
-                # Make sure /tmp has enough space for larger files
-                if expected_size > 0:
-                    free_space = shutil.disk_usage('/tmp').free
-                    if free_space < expected_size:
-                        raise IOError(f"Not enough space in /tmp for file of size {expected_size} bytes. Free space: {free_space} bytes")
+                # decided before reading the body so an oversize resource is a cache decision, not a failure
+                if expected_size > max_bytes:
+                    raise TooLargeToCache(f"resource is {expected_size} bytes; cache limit is {max_bytes} bytes")
                 with open(tmp_path, 'wb') as f:
                     # Increase chunk size for better performance with larger files
                     for chunk in r.iter_content(chunk_size=32768):  # 32KB chunks
                         if chunk:
-                            f.write(chunk)
                             downloaded_size += len(chunk)
+                            # content-length may be absent or wrong
+                            if downloaded_size > max_bytes:
+                                raise TooLargeToCache(f"resource exceeds cache limit of {max_bytes} bytes")
+                            f.write(chunk)
 
                 # Verify download completeness for files with reported size
                 # too aggressive...
@@ -348,12 +368,16 @@ class Wis2Message:
                 # set attribute for deletion later
                 setattr(self, 'tmp_path', tmp_path)
                 return tmp_path
+        except TooLargeToCache:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+            raise
         except requests.exceptions.RequestException as e:
             print(f"Failed to download file from {href}: {e}")
             # Clean up partial download
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
-            raise
+            raise DownloadError(str(e)) from e
         except (IOError, OSError) as e:
             print(f"I/O error while downloading {href}: {e}")
             if os.path.exists(tmp_path):
@@ -367,7 +391,7 @@ class Wis2Message:
             True if valid.
 
         Raises:
-            Exception: If hashing method unsupported or checksum fails.
+            IntegrityError: If hashing method unsupported or checksum fails.
         """
         input_bytes = self.data_bytes
         valid_methods = {
@@ -380,7 +404,7 @@ class Wis2Message:
         }
         method = self.integrity_block["method"]
         if method not in valid_methods:
-            raise Exception(f"Unsupported hashing method: {method}")
+            raise IntegrityError(f"Unsupported hashing method: {method}")
 
         sh = valid_methods[method]()
         sh.update(input_bytes)
@@ -388,7 +412,7 @@ class Wis2Message:
         hex_digest = sh.hexdigest()
         if self.integrity_block["value"] not in [b64_digest, hex_digest]:
             setattr(self, 'is_valid', False)
-            raise Exception(f"checksum failed for: {self.data_id}")
+            raise IntegrityError(f"checksum failed for: {self.data_id}")
         setattr(self, 'is_valid', True)
         return True
 

@@ -33,6 +33,7 @@ class Wis2ManagerLambdaStack(Stack):
                  publisher_secret: str = None,
                  lambda_role_arn: str = None,
                  include_insights: bool = False,
+                 max_cache_bytes: int = None,
                  **kwargs) -> None:
 
         super().__init__(scope, id, **kwargs)
@@ -102,7 +103,8 @@ class Wis2ManagerLambdaStack(Stack):
                 "MQTT_PUB_USER": wis2_mqtt_publisher.get('user'),
                 "MQTT_BROKER_HOST": broker_url,
                 "CACHE_ENDPOINT": cache_endpoint,
-                "REPORT_BY": report_by
+                "REPORT_BY": report_by,
+                **({"MAX_CACHE_BYTES": str(max_cache_bytes)} if max_cache_bytes else {})
             },
             insights_version=_lambda.LambdaInsightsVersion.VERSION_1_0_119_0 if include_insights else None,
             dead_letter_queue_enabled=True,
