@@ -337,7 +337,10 @@ class Wis2Message:
         dev_mode = os.environ.get('DEV-MODE', 'False') in ['True', 'true', '1']
         tmp_path = os.path.join(tmp_dir, self.filename)
         max_bytes = shutil.disk_usage(tmp_dir).free
-        configured_max = os.environ.get('MAX_CACHE_BYTES')
+        memory_mb = os.environ.get('AWS_LAMBDA_FUNCTION_MEMORY_SIZE')
+        # the body is held in memory and S3 multipart upload adds buffers; 25% of memory is an estimate
+        configured_max = os.environ.get('MAX_CACHE_BYTES') or (
+            int(memory_mb) * 1024 * 1024 // 4 if memory_mb else None)
         if configured_max:
             max_bytes = min(max_bytes, int(configured_max))
         try:
