@@ -95,8 +95,12 @@ def publish_wme(wis2_msg: Wis2Message, event_type: str, severity: str, title: st
             logger.error("REPORT_BY is not a valid centre-id; WME not published: report_by=%r", report_by,
                          extra=log_ctx)
             return False
-        subject = wis2_msg.topic.split('/')[3]
-        wme = wis2_monitor.build_wme(event_type, severity, report_by, subject, title, description,
+        topic_keys = wis2_msg.topic.split('/')
+        # a failure on another GC's cache/ copy says nothing reliable about the origin node (audit IQ-2)
+        if event_type != wis2_monitor.EVENT_ITEM_CACHE and topic_keys[0] != 'origin':
+            return False
+        subject = topic_keys[3]
+        wme =wis2_monitor.build_wme(event_type, severity, report_by, subject, title, description,
                                      channel=wis2_msg.topic)
         topic = wis2_monitor.monitor_topic(subject)
         payload = wis2_monitor.encode_wme(wme)
