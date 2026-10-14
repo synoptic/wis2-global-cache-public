@@ -44,10 +44,15 @@ Details:
 
 - **Topic and fields.** The topic is `monitor/a/wis2/<subject>`. `subject` is the centre-id at level 4 of the
   notification topic. `source` is this cache's centre-id from `REPORT_BY`. Centre-ids are checked against the WIS2
-  centre-id pattern before use. An invalid subject or `REPORT_BY` means no event is published, and an error is logged.
+  centre-id pattern before use. Download and integrity events are published only for notifications received on
+  `origin/`. A failure fetching another cache's copy says nothing reliable about the origin node, so it goes to the
+  metric and `error/` only. `item.cache` events are published for both channels. An invalid subject or `REPORT_BY` means no event is published, and an error is logged.
 - **Not caching.** The size decision is made before the body is read: from `Content-Length` when present, and from a
   running byte count while streaming otherwise. The limit is the smaller of free `/tmp` space and `MAX_CACHE_BYTES`
-  (optional, set through the CDK stack). The notification is republished with its origin links unchanged.
+  (optional, set through the CDK stack). When `MAX_CACHE_BYTES` is unset, the limit defaults to 25% of the Lambda
+  memory size (`AWS_LAMBDA_FUNCTION_MEMORY_SIZE`), because the body is held in memory and the S3 multipart upload adds
+  its own buffers. The 25% figure is an estimate. If it is too high, large items still run the Lambda out of memory
+  and are not reported. The notification is republished with its origin links unchanged.
   `properties.cache` is not rewritten.
 - **Failures as typed exceptions.** `wis2_message.py` raises `TooLargeToCache`, `DownloadError` and `IntegrityError`.
   The handler maps each to an event.
@@ -104,7 +109,8 @@ Details:
   - Unset `REPORT_BY`: no events, with one error log per event. Every environment must set it to its own centre-id.
 - New configuration: `REPORT_BY` (required for events), `MAX_CACHE_BYTES`, `WME_RATE_LIMIT`, `WME_RATE_WINDOW_SECONDS`.
 - Open items are tracked separately:
-  - the subject rule for items from another cache's `cache/` topic;
-  - the final `dataschema` URL;
-  - which username Global Services use;
-  - rate-limit values.
+  - the subject rule for items from another cache's `cache/` topic (mitigated by the `origin/`-only rule above);
+  - the final `dataschema` URL (clause 8 value adopted; check it resolves once published);
+  - which username Global Services use (`everyone` assumed; verify against the EMQX client list);
+  - rate-limit values (defaults accepted; tune from logs);
+  - the 25% memory fraction for the cache size limit (check "Max Memory Used" for a large item).
