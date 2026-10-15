@@ -13,6 +13,7 @@ from datetime import datetime as dt
 import requests
 import boto3
 import shutil
+from wis2_monitor import strip_url_query, strip_url_queries
 
 
 class DownloadError(Exception):
@@ -155,11 +156,11 @@ class Wis2Message:
 
             # Log warning for edge cases but don't fail
             if not filename:
-                print(f"Warning: Could not extract filename from URL {link_href} in message {self.data_id}")
+                print(f"Warning: Could not extract filename from URL {strip_url_query(link_href)} in message {self.data_id}")
                 filename = 'unknown'
 
             if not parsed.netloc:
-                raise ValueError(f"Invalid URL structure (no hostname): {link_href}")
+                raise ValueError(f"Invalid URL structure (no hostname): {strip_url_query(link_href)}")
 
             # Set attributes
             self.src_link = src_link
@@ -409,7 +410,7 @@ class Wis2Message:
                 os.remove(tmp_path)
             raise
         except requests.exceptions.RequestException as e:
-            print(f"Failed to download file from {href}: {e}")
+            print(f"Failed to download file from {strip_url_query(href)}: {strip_url_queries(e)}")
             # Clean up partial download
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
@@ -418,7 +419,7 @@ class Wis2Message:
             raise DownloadError(f"{type(e).__name__}" + (f": HTTP {status}" if status else ""), status=status,
                                 tls=isinstance(e, requests.exceptions.SSLError)) from e
         except (IOError, OSError) as e:
-            print(f"I/O error while downloading {href}: {e}")
+            print(f"I/O error while downloading {strip_url_query(href)}: {strip_url_queries(e)}")
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
             raise

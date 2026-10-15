@@ -24,6 +24,9 @@ import wis2_monitor
 
 logger = logging.getLogger()
 logger.setLevel(logging.WARN)
+# urllib3 retry warnings print the full request URL, including presigned query strings; the download outcome is
+# logged by this module instead
+logging.getLogger("urllib3").setLevel(logging.ERROR)
 
 # bucket info
 s3_bucket_region = os.environ.get('dest_bucket_region')
@@ -81,6 +84,14 @@ def is_transient(e: Exception) -> bool:
             return e.status >= 500 or e.status in TRANSIENT_HTTP_STATUS
         return isinstance(e.__cause__, TRANSIENT_DOWNLOAD_CAUSES)
     return isinstance(e, (PublishError, *TRANSIENT_ERRORS))
+
+
+def sanitized_traceback() -> str:
+    """Returns the current exception's traceback with URL query strings removed.
+
+    Download errors chain the requests exception, whose text carries the source URL and any presigned token.
+    """
+    return wis2_monitor.strip_url_queries(traceback.format_exc())
 
 
 def is_final_attempt(receive_count) -> bool:
@@ -199,14 +210,15 @@ def publish_wme(wis2_msg: Wis2Message, event_type: str, severity: str, title: st
                        extra={**log_ctx, "wme_id": wme['id'], "monitor_topic": topic})
         return True
     except Exception:
-        logger.error("failed to publish WME: type=%r data_id=%r", event_type, wis2_msg.data_id, exc_info=True,
-                     extra=log_ctx)
+        logger.error("failed to publish WME: type=%r data_id=%r\n%s", event_type, wis2_msg.data_id,
+                     sanitized_traceback(), extra=log_ctx)
         if dedup_key is not None:
             # release the claim so a later copy of the notification can retry the event
             try:
                 redis_host.delete(dedup_key)
             except Exception:
-                logger.error("failed to release WME claim: key=%r", dedup_key, exc_info=True, extra=log_ctx)
+                logger.error("failed to release WME claim: key=%r\n%s", dedup_key, sanitized_traceback(),
+                             extra=log_ctx)
         return False
 
 
@@ -496,7 +508,8 @@ def msg_handler(msg_batch, context):
                         [msg_centre, 'wmo_wis2_gc_no_cache_total']), cache_value=1, operation='inc')
 
         except Exception as e:
-            logger.error(f"failed to process message: {sqs_msg['messageId']}", exc_info=True)
+            tb = sanitized_traceback()
+            logger.error("failed to process message: %s\n%s", sqs_msg['messageId'], tb)
             # GC_* markers are counted by CloudWatch metric filters (deploy/stacks/wis2_lambda_stack.py)
             fail_ctx = {"sqs_message_id": sqs_msg['messageId'], "error_type": type(e).__name__,
                         "data_id": getattr(wis2_msg, 'data_id', None),
@@ -525,7 +538,7 @@ def msg_handler(msg_batch, context):
                 error_topic = error_topic + msg_topic.split('/')
                 # merge error message with original message
                 error_msg = deepcopy(wis2_msg.msg)
-            error_msg['error'] = {"msg": str(e), "traceback": traceback.format_exc()}
+            error_msg['error'] = {"msg": wis2_monitor.strip_url_queries(e), "traceback": tb}
             # just the first broker for now
             broker = brokers[0]
             error_topic = "/".join(error_topic)
@@ -533,9 +546,9 @@ def msg_handler(msg_batch, context):
                 publish(error_topic, json.dumps(error_msg), broker)
                 logger.error(f"published error msg: {error_topic}")
             except Exception:
-                logger.error("failed to publish error msg: topic=%r", error_topic, exc_info=True,
+                logger.error("failed to publish error msg: topic=%r\n%s", error_topic, sanitized_traceback(),
                              extra={"topic": error_topic, "sqs_message_id": sqs_msg['messageId']})
-            logger.error(f"error msg: {json.dumps(error_msg)}")
+            logger.error("error msg: %s", wis2_monitor.strip_url_queries(json.dumps(error_msg)))
             if msg_centre is None:
                 # the message never parsed far enough to identify a centre, so no download was attempted
                 logger.error("message not parsed; download metrics not updated: sqs_message_id=%r",

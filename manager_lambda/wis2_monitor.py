@@ -76,6 +76,18 @@ def strip_url_query(url: str) -> str:
     return urlunsplit((parts.scheme, parts.netloc, parts.path, "", ""))
 
 
+def strip_url_queries(text: str) -> str:
+    """Removes query strings and fragments from every URL in free text, such as an exception message or traceback.
+
+    Args:
+        text: Raw text.
+
+    Returns:
+        The text with URL queries removed; line breaks are kept.
+    """
+    return _BARE_QUERY.sub("", _URL.sub(lambda m: strip_url_query(m.group(0)), str(text)))
+
+
 def sanitize_text(text: str, max_chars: int) -> str:
     """Makes externally derived text safe to publish: strips URL queries and control characters.
 
@@ -86,9 +98,7 @@ def sanitize_text(text: str, max_chars: int) -> str:
     Returns:
         Sanitized, length-bounded text.
     """
-    cleaned = _URL.sub(lambda m: strip_url_query(m.group(0)), str(text))
-    cleaned = _BARE_QUERY.sub("", cleaned)
-    cleaned = _CONTROL.sub(" ", cleaned)
+    cleaned = _CONTROL.sub(" ", strip_url_queries(text))
     return cleaned[:max_chars]
 
 
