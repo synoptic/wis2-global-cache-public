@@ -393,3 +393,22 @@ class WIS2GCDashboardStack(Stack):
                 alarm.add_alarm_action(cw_actions.SnsAction(alarm_topic))
                 if notify_ok:
                     alarm.add_ok_action(cw_actions.SnsAction(alarm_topic))
+            # ECS publishes CPUUtilization only while a task runs, so no data points means no running task.
+            # Container Insights' RunningTaskCount would be direct but is billed per metric.
+            for service in client_services or []:
+                stack_name = Stack.of(service).stack_name
+                alarm = cloudwatch.Metric(
+                    namespace="AWS/ECS", metric_name="CPUUtilization",
+                    dimensions_map={"ServiceName": service.service_name, "ClusterName": service.cluster.cluster_name},
+                    statistic="SampleCount", period=Duration.minutes(period_minutes)
+                ).create_alarm(
+                    self, f"AlarmClientNotRunning{stack_name.replace('-', '')}",
+                    alarm_name=f"WIS2GC-{stack_name}-not-running",
+                    alarm_description="Global Broker client service has no running task, so nothing reaches the "
+                                      "work queue",
+                    threshold=1,
+                    evaluation_periods=2,
+                    comparison_operator=cloudwatch.ComparisonOperator.LESS_THAN_THRESHOLD,
+                    treat_missing_data=cloudwatch.TreatMissingData.BREACHING)
+                alarm.add_alarm_action(cw_actions.SnsAction(alarm_topic))
+                alarm.add_ok_action(cw_actions.SnsAction(alarm_topic))
