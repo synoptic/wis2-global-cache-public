@@ -19,7 +19,7 @@ import logging
 from enum import Enum
 import ssl
 import threading
-from wis2_message import Wis2Message, IntegrityError, DownloadError, TooLargeToCache
+from wis2_message import Wis2Message, IntegrityError, DownloadError, TooLargeToCache, ContentDecodeError
 import wis2_monitor
 
 logger = logging.getLogger()
@@ -213,7 +213,8 @@ def publish_wme(wis2_msg: Wis2Message, event_type: str, severity: str, title: st
 def fetch_validated(wis2_msg: Wis2Message) -> bytes:
     """Gets the resource bytes, preferring embedded content, and validates integrity.
 
-    Embedded content that fails integrity falls back to the URL (Guide 2.7.4.1).
+    Embedded content that cannot be decoded, has the wrong size, or fails integrity falls back to the URL
+    (Guide 2.7.4.1).
 
     Args:
         wis2_msg: Message whose resource is fetched.
@@ -226,19 +227,21 @@ def fetch_validated(wis2_msg: Wis2Message) -> bytes:
         DownloadError: The resource could not be downloaded.
         IntegrityError: The resource failed integrity validation.
     """
-    data_bytes = wis2_msg.cache_msg_data(use_content=True)
     try:
+        data_bytes = wis2_msg.cache_msg_data(use_content=True)
         wis2_msg.validate_integrity()
-    except IntegrityError as content_error:
+        return data_bytes
+    except (ContentDecodeError, IntegrityError) as content_error:
         if not wis2_msg.used_content:
             raise
-        logger.warning("embedded content failed integrity; downloading instead: data_id=%r", wis2_msg.data_id,
+        logger.warning("embedded content invalid; downloading instead: data_id=%r error_type=%s", wis2_msg.data_id,
+                       type(content_error).__name__,
                        extra={"data_id": wis2_msg.data_id, "topic": wis2_msg.topic})
         publish_wme(wis2_msg, wis2_monitor.EVENT_ITEM_INTEGRITY, "WARNING",
-                    title=f"Embedded content does not match integrity value; downloading instead: {wis2_msg.data_id}",
+                    title=f"Embedded content is invalid; downloading instead: {wis2_msg.data_id}",
                     description=str(content_error), dedup_suffix="content")
-        data_bytes = wis2_msg.cache_msg_data(use_content=False)
-        wis2_msg.validate_integrity()
+    data_bytes = wis2_msg.cache_msg_data(use_content=False)
+    wis2_msg.validate_integrity()
     return data_bytes
 
 

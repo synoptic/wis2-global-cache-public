@@ -37,6 +37,10 @@ class TooLargeToCache(Exception):
     """The resource exceeds the size this Global Cache will cache."""
 
 
+class ContentDecodeError(Exception):
+    """Embedded content has an unknown encoding, cannot be decoded, or does not match its size property."""
+
+
 def nested_get(d: dict, keys: list) -> Any:
     """Gets value of nested key/s in dict.
 
@@ -74,11 +78,6 @@ class Wis2Message:
         self.new_uuid = uuid4().__str__()
         self.new_topic = self.topic.replace('origin', 'cache')
         self.is_valid = None
-        self.content_encodings = [
-            "utf-8",
-            "base64",
-            "gzip"
-        ]
         self.dataserver = None
         self.src_link = self.get_source_link()
 
@@ -224,7 +223,7 @@ class Wis2Message:
             The data bytes.
 
         Raises:
-            Exception: If encoding is unknown or unsupported.
+            ContentDecodeError: Embedded content is invalid (see decode_content).
         """
         dnld_link = self.src_link
         dndld_keys = {'content': ['properties', 'content', 'value'],
@@ -234,17 +233,11 @@ class Wis2Message:
             prop_val = nested_get(self.msg, v)
             setattr(self, k, prop_val)
         data_bytes = None
-        self.used_content = bool(use_content and self.content)
-        if use_content and self.content:
-            if self.encoding not in self.content_encodings:
-                raise Exception(f"unknown encoding {self.encoding} for {self.data_id}")
-            elif self.encoding == 'base64':
-                data_bytes = base64.b64decode(self.content)
-            elif self.encoding == 'utf-8':
-                data_bytes = self.content.encode()
-            else:
-                raise Exception(f"unsupported encoding {self.encoding} for {self.data_id}")
-
+        # gzip is a valid WNM encoding (RFC 1952 then base64) that is not decoded here, so untrusted input is never
+        # decompressed; the resource is downloaded from the URL instead (Guide 2.7.4.1 makes extraction optional)
+        self.used_content = bool(use_content and self.content and self.encoding != 'gzip')
+        if self.used_content:
+            data_bytes = self.decode_content()
         else:
             data_file = self.download_file(dnld_link)
             with open(data_file, "rb") as file:
@@ -253,6 +246,34 @@ class Wis2Message:
         setattr(self, 'data_bytes', data_bytes)
         # set integrity block if missing in the msg
         self.set_integrity_block(data_bytes)
+        return data_bytes
+
+    def decode_content(self) -> bytes:
+        """Decodes utf-8 or base64 embedded content and checks it against ``properties.content.size``.
+
+        Returns:
+            The decoded bytes.
+
+        Raises:
+            ContentDecodeError: Unknown encoding, a value that is not valid base64 or not a string, or a decoded
+                length different from ``size`` (the unencoded size, WNM 1.15).
+        """
+        if not isinstance(self.content, str):
+            raise ContentDecodeError(f"content value is not a string for {self.data_id}")
+        if self.encoding not in ('base64', 'utf-8'):
+            raise ContentDecodeError(f"unknown content encoding {self.encoding!r} for {self.data_id}")
+        try:
+            if self.encoding == 'base64':
+                # line breaks are allowed (MIME-style wrapping); any other non-alphabet character is invalid
+                data_bytes = base64.b64decode("".join(self.content.split()), validate=True)
+            else:
+                data_bytes = self.content.encode()
+        except ValueError as e:
+            # binascii.Error, non-ASCII base64 input, and lone surrogates in utf-8 are all ValueErrors
+            raise ContentDecodeError(f"invalid {self.encoding} content for {self.data_id}: {e}") from e
+        if isinstance(self.size, int) and len(data_bytes) != self.size:
+            raise ContentDecodeError(f"decoded content is {len(data_bytes)} bytes but size is {self.size} "
+                                     f"for {self.data_id}")
         return data_bytes
 
     # function to set the integrity block if it is missing from the message
