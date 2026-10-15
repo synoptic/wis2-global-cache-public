@@ -425,19 +425,6 @@ def msg_handler(msg_batch, context):
                     # then we haven't seen it before, or it's an update
                     # redis set with ttl
                     redis_host.set(wis2_msg.data_id, wis2_msg.pubtime_epoch, ex=ttl_minutes * 60)
-                if wis2_msg.do_cache:
-                    dnld_total = cache_metric(redis_host, "|".join(
-                        [msg_centre, 'wmo_wis2_gc_downloaded_total']), cache_value=1, operation='inc')
-                    dnld_last = cache_metric(redis_host, "|".join(
-                        [msg_centre, wis2_msg.dataserver, 'wmo_wis2_gc_dataserver_last_download_timestamp_seconds']),
-                                             cache_value=int(time.time()), operation='set')
-                    dataserver_status = cache_metric(redis_host, "|".join(
-                        [msg_centre, wis2_msg.dataserver, 'wmo_wis2_gc_dataserver_status_flag']), cache_value=1,
-                                                     operation='set')
-                if not wis2_msg.do_cache:
-                    # then increase wmo_wis2_gc_no_cache_total
-                    no_cache_total = cache_metric(redis_host, "|".join(
-                        [msg_centre, 'wmo_wis2_gc_no_cache_total']), cache_value=1, operation='inc')
                 # now format message, even if we did not cache it (pass through)
                 notification_msg = wis2_msg.format_cache_msg()
                 # send to mqtt broker/s
@@ -456,6 +443,20 @@ def msg_handler(msg_batch, context):
                                 logger.error("failed to release dedup key; retry will be skipped: data_id=%r",
                                              wis2_msg.data_id, exc_info=True, extra={"data_id": wis2_msg.data_id})
                             raise PublishError(f"{type(e).__name__} publishing to {wis2_msg.new_topic}") from e
+                # counted after the publish so a record retried for a publish failure is counted once
+                if wis2_msg.do_cache:
+                    dnld_total = cache_metric(redis_host, "|".join(
+                        [msg_centre, 'wmo_wis2_gc_downloaded_total']), cache_value=1, operation='inc')
+                    dnld_last = cache_metric(redis_host, "|".join(
+                        [msg_centre, wis2_msg.dataserver, 'wmo_wis2_gc_dataserver_last_download_timestamp_seconds']),
+                                             cache_value=int(time.time()), operation='set')
+                    dataserver_status = cache_metric(redis_host, "|".join(
+                        [msg_centre, wis2_msg.dataserver, 'wmo_wis2_gc_dataserver_status_flag']), cache_value=1,
+                                                     operation='set')
+                if not wis2_msg.do_cache:
+                    # then increase wmo_wis2_gc_no_cache_total
+                    no_cache_total = cache_metric(redis_host, "|".join(
+                        [msg_centre, 'wmo_wis2_gc_no_cache_total']), cache_value=1, operation='inc')
 
         except Exception as e:
             logger.error(f"failed to process message: {sqs_msg['messageId']}", exc_info=True)
@@ -503,23 +504,22 @@ def msg_handler(msg_batch, context):
                 logger.error("message not parsed; download metrics not updated: sqs_message_id=%r",
                              sqs_msg['messageId'], extra={"sqs_message_id": sqs_msg['messageId']})
                 continue
+            # download metrics describe the data server (Guide 2.7.4.1): integrity failures have their own counter,
+            # and S3/Redis/broker/parse errors are ours, so they show only in logs, GC_* metrics and error/
+            if not isinstance(e, DownloadError):
+                continue
             # an external ERROR event cannot be withdrawn, so a failure SQS will retry is reported only once it is final
-            if isinstance(e, DownloadError) and (not transient or fail_ctx["final_attempt"]):
+            if not transient or fail_ctx["final_attempt"]:
                 publish_wme(wis2_msg, wis2_monitor.EVENT_ITEM_DOWNLOAD, "ERROR",
                             title=f"Cannot download data item: {wis2_msg.src_link}",
                             description=str(e), dedup_suffix=wis2_msg.dataserver)
-            # metrics
-            # todo - move parsing of these metrics components and or the metrics interactions to a different place
-            ds_name = 'unknown_dataserver'
-            if wis2_msg is not None and wis2_msg.dataserver is not None:
-                ds_name = wis2_msg.dataserver
-            dnld_error_total = cache_metric(redis_host, "|".join(
-                [msg_centre, ds_name, 'wmo_wis2_gc_downloaded_errors_total']), cache_value=1,
-                                            operation='inc')
-            if wis2_msg is not None and wis2_msg.dataserver is not None:
-                dataserver_status = cache_metric(redis_host, "|".join(
-                    [msg_centre, wis2_msg.dataserver, 'wmo_wis2_gc_dataserver_status_flag']), cache_value=0,
-                                                 operation='set')
+            ds_name = wis2_msg.dataserver or 'unknown_dataserver'
+            cache_metric(redis_host, "|".join([msg_centre, ds_name, 'wmo_wis2_gc_downloaded_errors_total']),
+                         cache_value=1, operation='inc')
+            if wis2_msg.dataserver is not None:
+                cache_metric(redis_host, "|".join([msg_centre, wis2_msg.dataserver,
+                                                   'wmo_wis2_gc_dataserver_status_flag']),
+                             cache_value=0, operation='set')
 
     print({"batchItemFailures": len(batch_item_failures)})
     return {"batchItemFailures": batch_item_failures}
