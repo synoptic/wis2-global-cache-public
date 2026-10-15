@@ -93,13 +93,14 @@ returning an error, so a Lambda deployed first would log events as published whi
 ```bash
 cd deploy
 cdk deploy test-emqx-broker --exclusively --app "python app_test_env.py" --profile <test-profile>
-cdk deploy test-wis2-sqs-work test-wis2-manager-lambda WIS2GCDashboard --exclusively --app "python app_test_env.py" --profile <test-profile>
+cdk deploy test-wis2-sqs-work test-wis2-manager-lambda test-wis2-metrics-lambda WIS2GCDashboard --exclusively --app "python app_test_env.py" --profile <test-profile>
 ```
 
 `--exclusively` deploys only the named stacks. Without it, CDK also deploys their dependencies, and the dashboard
 depends on the client and broker stacks. Run `cdk diff` with the same arguments first.
 
-Then check end to end: subscribe as `everyone` to `monitor/#` and `cache/#` on the GC broker.
+Then check end to end: subscribe as `everyone` to `monitor/#` and `cache/#` on the GC broker. After the first
+deploy of broker TLS verification (4.6), also check the logs for `GC_RETRY` lines with `error_type=PublishError`.
 
 ### 4.2. Cache size limit
 
@@ -127,6 +128,19 @@ are no longer cached, and each failure:
 - publishes an `item.download` ERROR monitoring event with description `SSLError`, for `origin/` notifications;
 - increments `wmo_wis2_gc_downloaded_errors_total` for that data server;
 - is not retried, because a certificate problem will fail the same way on retry.
+
+The trusted certificate authorities come from the `certifi` version pinned in `manager_lambda/requirements.txt`. If
+a data server with a valid certificate from a recently added authority fails, update that pin before rolling back.
+
+The move to Python 3.13 and urllib3 2.x (2026-10-15) made the checks stricter. A data server that passed before can
+now fail if it:
+
+- only offers TLS 1.0 or 1.1 (TLS 1.2 is now the minimum);
+- uses a certificate that breaks strict X.509 rules, for example a private CA certificate without an Authority Key
+  Identifier or a basicConstraints extension that is not marked critical.
+
+After that deploy, check `GC_TLS_VERIFY_FAILED` by data server. The rollback below fixes the certificate cases but not
+the TLS version minimum.
 
 To find affected data servers, use CloudWatch Logs Insights on `/aws/lambda/test-wis2-manager-lambda`:
 
@@ -159,12 +173,33 @@ Each SQS record that fails is either returned to SQS for one retry or dropped. T
 | Other HTTP 4xx (for example 404), integrity failure | no | none (see `error/` and metrics) |
 | Anything else (malformed message, unexpected exception) | no | `GC_UNCLASSIFIED_FAILURE` |
 
+Download metrics describe the data server (Guide 2.7.4.1):
+
+- Only download failures increment `wmo_wis2_gc_downloaded_errors_total` and set
+  `wmo_wis2_gc_dataserver_status_flag` to 0.
+- Success metrics (`downloaded_total`, last download time, status flag 1, `no_cache_total`) are written after the
+  `cache/` publish succeeds, so a record retried for a publish failure counts once.
+- Integrity failures increment only `wmo_wis2_gc_integrity_failed_total`.
+- Errors on the Global Cache side (S3, Redis, broker publish, malformed message) update neither. They appear only
+  in the logs, the `GC_*` metrics, the alarms and `error/`. There is no metric that counts them yet.
+
+Embedded content (`properties.content`) is used instead of downloading when it is valid:
+
+- `utf-8` and `base64` content is decoded and checked against `size` and the integrity value. Line breaks in base64
+  are ignored; any other character outside the base64 alphabet makes the content invalid. If decoding or a check
+  fails, the item is downloaded from its URL and an `item.integrity` WARNING monitoring event is published.
+- `gzip` content is valid WIS2 but is not decoded, so that untrusted data is never decompressed. The item is
+  downloaded from its URL without an event.
+
 For a retried download failure, the `item.download` monitoring event is published only on the final attempt
 (`SQS_MAX_RECEIVE_COUNT`, set from the queue stack), so a failure that the retry recovers from is not reported to the
 WIS2 Node or the Global Monitor. Failures that are not retried publish the event straight away.
 
 Every failure still publishes to the internal `error/` topic with a full traceback. A retried record can therefore
-publish to `error/` and count in `downloaded_errors_total` twice.
+publish to `error/` twice, and a retried download failure counts in `downloaded_errors_total` twice.
+
+URL query strings, which can carry presigned tokens, are removed from log lines, tracebacks and the `error` field of
+`error/` messages. The original notification embedded in an `error/` message keeps its links unchanged.
 
 A retried record holds up its FIFO message group, which is the data_id, for 15 minutes per attempt. Copies of the same
 item from other Global Caches (`cache/` notifications) share that group, so they wait behind it. A transient failure
@@ -186,6 +221,7 @@ the failed record was dropped and the next copy was processed straight away.
 | `WIS2GC-Work-queue-stalled` | oldest work queue message >= 1 hour | 5 min | yes | Lambda not keeping up or not running |
 | `WIS2GC-Unclassified-failures` | `GC_UNCLASSIFIED_FAILURE` logged | 1 hour | no | unexpected error, record dropped |
 | `WIS2GC-TLS-verify-failures` | `GC_TLS_VERIFY_FAILED` logged | 1 hour | no | a data server's certificate failed verification (see 4.3) |
+| `WIS2GC-<client stack>-not-running` | no CPU data from the Global Broker client service for 10 min | 5 min | yes | client task stopped or failing to start |
 
 - **Dead-letter queue alarm:** nothing reads the dead-letter queue, and SQS stops publishing metrics for an idle
   queue, so this alarm keeps its last state when data is missing. It stays in alarm until the queue is purged or
@@ -193,7 +229,9 @@ the failed record was dropped and the next copy was processed straight away.
 - **Log marker alarms:** these clear without an email after an hour with no matching log line. A data server that
   keeps failing at least once an hour keeps the alarm on and sends no further email. One that fails less often sends
   one email per failure.
-- **Not covered:** if the Global Broker client stops, nothing reaches the work queue and no alarm fires.
+- **Client alarm:** ECS reports `CPUUtilization` only while a task runs, so the alarm treats missing data as a
+  stopped client. It does not detect a client that runs but is disconnected from the Global Broker. Container
+  Insights' `RunningTaskCount` would be more direct, but it is billed per metric.
 
 Logs Insights query for all markers:
 
@@ -201,4 +239,67 @@ Logs Insights query for all markers:
 fields @timestamp, @message
 | filter @message like /GC_(RETRY|UNCLASSIFIED_FAILURE|TLS_VERIFY_FAILED)/
 | sort @timestamp desc
+```
+
+### 4.6. Broker TLS and publish acknowledgements
+
+The manager Lambda publishes `cache/`, `monitor/` and `error/` messages to the GC broker with its own short-lived
+MQTT client:
+
+- It verifies the broker's TLS certificate and hostname against the system certificate store.
+- It waits for the broker's acknowledgements. A refused connection, a refused publish (for example an ACL denial) or
+  no answer raises an error. Each step (TCP connect, TLS handshake, CONNACK, PUBACK) has a 10-second limit. Before
+  this change, a refused publish or a missing PUBACK looked like a success.
+- It does not reconnect. A lost PUBACK still means the broker may have delivered the message, so the SQS retry can
+  publish a second `cache/` notification for the same item, with a different `id`. This is accepted; consumers
+  deduplicate on `data_id`.
+
+A failed `cache/` publish is retried through SQS (4.4). A failed `monitor/` publish is logged
+(`failed to publish WME`) and does not affect caching.
+
+**Rollback, certificate verification only.** If the broker's certificate fails verification, every `cache/` publish
+fails and records move to the dead-letter queue. In `manager_lambda/wis2_lambda_consumer.py`, `publish`, change
+`client.tls_insecure_set(False)` to `client.tls_insecure_set(True)`, then redeploy `test-wis2-manager-lambda` with
+`--exclusively`. This skips only the hostname check, which is how publishing behaved before; the certificate chain
+is still checked.
+
+**Rollback, acknowledgement checks.** Revert the commit that added the MQTT client to `publish`. That restores
+`paho.mqtt.publish.single`, which does not wait for broker acknowledgements.
+
+### 4.7. Dead-letter queue
+
+Records that fail both SQS attempts stay on the dead-letter queue for 2 days for inspection. Nothing reads them
+automatically. The commands below need the queue's name, which is in the SQS console or the `test-wis2-sqs-work` stack's
+CloudFormation exports.
+
+Inspect (read-only apart from the receive count):
+
+```bash
+aws sqs get-queue-url --queue-name <dlq-name> --profile <test-profile>
+aws sqs receive-message --queue-url <dlq-url> --max-number-of-messages 10 --attribute-names All --profile <test-profile>
+```
+
+Then either delete the messages, which also clears the `WIS2GC-DLQ-not-empty` alarm:
+
+```bash
+aws sqs purge-queue --queue-url <dlq-url> --profile <test-profile>
+```
+
+or, when the cause was on the Global Cache side and has been fixed, move them back to the work queue:
+
+```bash
+aws sqs start-message-move-task --source-arn <dlq-arn> --profile <test-profile>
+```
+
+A redriven item is published on `cache/` late, after its original notification. Only redrive recent records.
+
+### 4.8. Tests
+
+Run the manager Lambda unit tests in a container, not on a workstation (the handler module deletes files in
+`/tmp`):
+
+```bash
+docker run --rm -e PYTHONPATH=/src/manager_lambda -v "$PWD/manager_lambda:/src/manager_lambda:ro" \
+  -w /src/manager_lambda python:3.13-slim sh -c \
+  "pip install -q -r requirements.txt pytest==9.1.1 && python -m pytest -q -p no:cacheprovider"
 ```
