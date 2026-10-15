@@ -94,12 +94,12 @@ class Wis2ManagerLambdaStack(Stack):
         # Lambda function definition remains mostly the same
         wis2_lambda = _lambda.Function(
             self, 'WIS2ManagerLambda',
-            runtime=_lambda.Runtime.PYTHON_3_10,
+            runtime=_lambda.Runtime.PYTHON_3_13,
             memory_size=memory_footprint,
             architecture=_lambda.Architecture.ARM_64,
             code=_lambda.Code.from_asset('../manager_lambda',
                                          bundling=BundlingOptions(
-                                             image=DockerImage.from_registry("python:3.10"),
+                                             image=DockerImage.from_registry("python:3.13"),
                                              command=[
                                                  'bash', '-c',
                                                  'pip install -r requirements.txt -t /asset-output && cp -au . '
@@ -122,7 +122,7 @@ class Wis2ManagerLambdaStack(Stack):
                 **({"MAX_CACHE_BYTES": str(max_cache_bytes)} if max_cache_bytes else {}),
                 **({"SQS_MAX_RECEIVE_COUNT": str(max_receive_count)} if max_receive_count else {})
             },
-            insights_version=_lambda.LambdaInsightsVersion.VERSION_1_0_119_0 if include_insights else None,
+            insights_version=_lambda.LambdaInsightsVersion.VERSION_1_0_498_0 if include_insights else None,
             dead_letter_queue_enabled=True,
             timeout=Duration.minutes(15),
             log_group=log_group

@@ -48,14 +48,14 @@ class MetricsLambdaStack(Stack):
             code=lambda_.Code.from_asset(
                 '../metrics_lambda',
                 bundling=BundlingOptions(
-                    image=lambda_.Runtime.PYTHON_3_10.bundling_image,
+                    image=lambda_.Runtime.PYTHON_3_13.bundling_image,
                     command=[
                         "bash", "-c",
                         "pip install -r requirements.txt -t /asset-output && cp -au . /asset-output"
                     ]
                 )
             ),
-            runtime=lambda_.Runtime.PYTHON_3_10,
+            runtime=lambda_.Runtime.PYTHON_3_13,
             handler="gc_metrics_handler.handler",
             vpc=vpc,
             vpc_subnets=private_subnets,
