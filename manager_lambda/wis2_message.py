@@ -16,7 +16,17 @@ import shutil
 
 
 class DownloadError(Exception):
-    """The resource could not be downloaded from its data server."""
+    """The resource could not be downloaded from its data server.
+
+    Attributes:
+        status: HTTP status code, or None when no response was received.
+        tls: True when the TLS handshake or certificate verification failed.
+    """
+
+    def __init__(self, message: str, status: int | None = None, tls: bool = False):
+        super().__init__(message)
+        self.status = status
+        self.tls = tls
 
 
 class IntegrityError(Exception):
@@ -338,7 +348,9 @@ class Wis2Message:
         tmp_path = os.path.join(tmp_dir, self.filename)
         max_bytes = shutil.disk_usage(tmp_dir).free
         memory_mb = os.environ.get('AWS_LAMBDA_FUNCTION_MEMORY_SIZE')
-        # the body is held in memory and S3 multipart upload adds buffers; 25% of memory is an estimate
+        # Default cap is 25% of Lambda memory: the body is held in memory and S3 multipart upload adds buffers.
+        # 25% is an unmeasured estimate (ADR 0002). MAX_CACHE_BYTES overrides it; free /tmp always applies.
+        # Larger items are not cached; they are republished with origin links plus an item.cache WME.
         configured_max = os.environ.get('MAX_CACHE_BYTES') or (
             int(memory_mb) * 1024 * 1024 // 4 if memory_mb else None)
         if configured_max:
@@ -382,7 +394,8 @@ class Wis2Message:
                 os.remove(tmp_path)
             # str(e) can embed the URL with its presigned query string, so it is not carried into the message
             status = getattr(getattr(e, 'response', None), 'status_code', None)
-            raise DownloadError(f"{type(e).__name__}" + (f": HTTP {status}" if status else "")) from e
+            raise DownloadError(f"{type(e).__name__}" + (f": HTTP {status}" if status else ""), status=status,
+                                tls=isinstance(e, requests.exceptions.SSLError)) from e
         except (IOError, OSError) as e:
             print(f"I/O error while downloading {href}: {e}")
             if os.path.exists(tmp_path):

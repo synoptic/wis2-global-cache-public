@@ -11,7 +11,8 @@ import glob
 import paho.mqtt.publish
 import boto3
 import requests as requests
-from botocore.exceptions import ClientError
+from boto3.exceptions import S3UploadFailedError
+from botocore.exceptions import BotoCoreError, ClientError
 from datetime import datetime as dt
 import paho.mqtt.client as mqtt
 import time
@@ -47,6 +48,53 @@ report_by = os.environ.get('REPORT_BY')
 # applies to the non-normative download/integrity events only; gs:182 not-cached events are never limited
 wme_rate_limit = int(os.environ.get('WME_RATE_LIMIT', '60'))
 wme_rate_window_seconds = int(os.environ.get('WME_RATE_WINDOW_SECONDS', '300'))
+# work queue maxReceiveCount, set by the CDK stack; unset means every attempt counts as final, so no event is held back
+sqs_max_receive_count = int(os.environ.get('SQS_MAX_RECEIVE_COUNT', '1'))
+
+TRANSIENT_HTTP_STATUS = (408, 429)
+# RetryError is what the download session raises once its own 5xx retries are exhausted
+TRANSIENT_DOWNLOAD_CAUSES = (requests.exceptions.ConnectionError, requests.exceptions.Timeout,
+                             requests.exceptions.ChunkedEncodingError, requests.exceptions.RetryError)
+TRANSIENT_ERRORS = (BotoCoreError, ClientError, S3UploadFailedError,
+                    redis.exceptions.ConnectionError, redis.exceptions.TimeoutError)
+
+
+class PublishError(Exception):
+    """Publishing the cache/ notification to the broker failed."""
+
+
+def is_transient(e: Exception) -> bool:
+    """Decides whether a failed record is worth one SQS retry (queue maxReceiveCount is 2).
+
+    Args:
+        e: Exception that failed the record.
+
+    Returns:
+        True for failures likely to succeed later: network errors, timeouts, HTTP 5xx/408/429,
+        S3, Redis and broker publish errors. False for TLS, other HTTP 4xx, integrity and unknown errors.
+    """
+    if isinstance(e, DownloadError):
+        if e.tls:
+            return False
+        if e.status is not None:
+            return e.status >= 500 or e.status in TRANSIENT_HTTP_STATUS
+        return isinstance(e.__cause__, TRANSIENT_DOWNLOAD_CAUSES)
+    return isinstance(e, (PublishError, *TRANSIENT_ERRORS))
+
+
+def is_final_attempt(receive_count) -> bool:
+    """Decides whether SQS will deliver this record again if it fails now.
+
+    Args:
+        receive_count: SQS ApproximateReceiveCount attribute (a string), or None when absent.
+
+    Returns:
+        True when the count reaches the queue's maxReceiveCount, or is absent or unparsable.
+    """
+    try:
+        return int(receive_count) >= sqs_max_receive_count
+    except (TypeError, ValueError):
+        return True
 
 
 def publish(topic: str, payload, broker: dict) -> None:
@@ -401,11 +449,35 @@ def msg_handler(msg_batch, context):
                         print(
                             f"failed to publish data_id {wis2_msg.data_id} to {broker['host']} on topic {wis2_msg.new_topic}")
                         if not dev_mode:
-                            raise e
+                            # the dedup key is already set; release it or the SQS retry is skipped as a duplicate
+                            try:
+                                redis_host.delete(wis2_msg.data_id)
+                            except Exception:
+                                logger.error("failed to release dedup key; retry will be skipped: data_id=%r",
+                                             wis2_msg.data_id, exc_info=True, extra={"data_id": wis2_msg.data_id})
+                            raise PublishError(f"{type(e).__name__} publishing to {wis2_msg.new_topic}") from e
 
         except Exception as e:
             logger.error(f"failed to process message: {sqs_msg['messageId']}", exc_info=True)
-            batch_item_failures.append({"itemIdentifier": sqs_msg['messageId']})
+            # GC_* markers are counted by CloudWatch metric filters (deploy/stacks/wis2_lambda_stack.py)
+            fail_ctx = {"sqs_message_id": sqs_msg['messageId'], "error_type": type(e).__name__,
+                        "data_id": getattr(wis2_msg, 'data_id', None),
+                        "dataserver": getattr(wis2_msg, 'dataserver', None),
+                        "receive_count": sqs_msg.get('attributes', {}).get('ApproximateReceiveCount')}
+            transient = is_transient(e)
+            fail_ctx["final_attempt"] = is_final_attempt(fail_ctx["receive_count"])
+            if transient:
+                batch_item_failures.append({"itemIdentifier": sqs_msg['messageId']})
+                logger.warning("GC_RETRY transient failure returned to SQS: error_type=%s receive_count=%s "
+                               "final_attempt=%s dataserver=%r data_id=%r", fail_ctx["error_type"],
+                               fail_ctx["receive_count"], fail_ctx["final_attempt"], fail_ctx["dataserver"],
+                               fail_ctx["data_id"], extra=fail_ctx)
+            elif not isinstance(e, (DownloadError, IntegrityError)):
+                logger.error("GC_UNCLASSIFIED_FAILURE not retried: error_type=%s dataserver=%r data_id=%r",
+                             fail_ctx["error_type"], fail_ctx["dataserver"], fail_ctx["data_id"], extra=fail_ctx)
+            if isinstance(e, DownloadError) and e.tls:
+                logger.warning("GC_TLS_VERIFY_FAILED data server TLS/certificate check failed, item not cached: "
+                               "dataserver=%r data_id=%r", fail_ctx["dataserver"], fail_ctx["data_id"], extra=fail_ctx)
             error_msg = {}
             # add error to cache_message
             error_topic = ['error']
@@ -431,7 +503,8 @@ def msg_handler(msg_batch, context):
                 logger.error("message not parsed; download metrics not updated: sqs_message_id=%r",
                              sqs_msg['messageId'], extra={"sqs_message_id": sqs_msg['messageId']})
                 continue
-            if isinstance(e, DownloadError):
+            # an external ERROR event cannot be withdrawn, so a failure SQS will retry is reported only once it is final
+            if isinstance(e, DownloadError) and (not transient or fail_ctx["final_attempt"]):
                 publish_wme(wis2_msg, wis2_monitor.EVENT_ITEM_DOWNLOAD, "ERROR",
                             title=f"Cannot download data item: {wis2_msg.src_link}",
                             description=str(e), dedup_suffix=wis2_msg.dataserver)
@@ -448,6 +521,5 @@ def msg_handler(msg_batch, context):
                     [msg_centre, wis2_msg.dataserver, 'wmo_wis2_gc_dataserver_status_flag']), cache_value=0,
                                                  operation='set')
 
-    sqs_batch_response = {"batchItemFailures": []}  # hard coded due to issue with batchItemFailures
     print({"batchItemFailures": len(batch_item_failures)})
-    return sqs_batch_response
+    return {"batchItemFailures": batch_item_failures}
