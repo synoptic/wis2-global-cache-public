@@ -108,6 +108,7 @@ manager_lambda_stack = Wis2ManagerLambdaStack(
     lambda_role_arn=lambda_role_arn,
     include_insights=True,
     report_by=os.environ.get('REPORT_BY', 'io-wis2dev-global-cache'),
+    max_receive_count=wis2_sqs_stack.max_receive_count,
     env=env
 )
 manager_lambda_stack.add_dependency(wis2_sqs_stack)
@@ -133,6 +134,7 @@ WIS2GCDashboardStack(
     manager_lambda_name=manager_lambda_stack.lambda_function.function_name,
     work_queue_name=wis2_sqs_stack.queue_name,
     dlq_name=wis2_sqs_stack.dlq_name,
+    manager_log_metrics=manager_lambda_stack.log_metrics,
     client_services = [dev_client_stack.service],
     broker_ecs_service_name=emqx_broker_stack.service.service.service_name,
     broker_ecs_cluster_name=emqx_broker_stack.cluster.cluster_name,

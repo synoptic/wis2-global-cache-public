@@ -15,6 +15,7 @@ class WIS2GCDashboardStack(Stack):
         broker_ecs_service_name = kwargs.pop("broker_ecs_service_name", None)
         broker_ecs_cluster_name = kwargs.pop("broker_ecs_cluster_name", None)
         client_services = kwargs.pop("client_services", None)
+        manager_log_metrics = kwargs.pop("manager_log_metrics", None)
 
         super().__init__(scope, id, **kwargs)
         period_minutes = 5
@@ -268,6 +269,32 @@ class WIS2GCDashboardStack(Stack):
                           lambda_memory_util_max],
                 )
             )
+
+        if manager_log_metrics or dlq_name:
+            widgets = []
+            if manager_log_metrics:
+                widgets.append(cloudwatch.GraphWidget(
+                    title="Manager Lambda failures (GC_* log markers)",
+                    width=12,
+                    height=6,
+                    left=[m.with_(period=Duration.minutes(period_minutes), label=name)
+                          for name, m in manager_log_metrics.items()]
+                ))
+            if dlq_name:
+                # records still failing after the SQS retry land here
+                widgets.append(cloudwatch.GraphWidget(
+                    title="DLQ messages visible (retries exhausted)",
+                    width=12,
+                    height=6,
+                    left=[cloudwatch.Metric(
+                        namespace="AWS/SQS",
+                        metric_name="ApproximateNumberOfMessagesVisible",
+                        dimensions_map={"QueueName": dlq_name},
+                        statistic="Maximum",
+                        period=Duration.minutes(period_minutes)
+                    )]
+                ))
+            dashboard.add_widgets(*widgets)
 
         if broker_ecs_service_name and broker_ecs_cluster_name:
             # Add ECS service metrics for CPU and Memory utilization

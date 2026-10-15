@@ -9,6 +9,7 @@ from aws_cdk import (
 class Wis2SQSStack(Stack):
     def __init__(self, scope: Construct, id: str, **kwargs) -> None:
         super().__init__(scope, id, **kwargs)
+        max_receive_count = 2
 
         wis2_work_dlq = sqs.Queue(self, "WIS2GlobalCacheDLQ",
                                   removal_policy=RemovalPolicy.RETAIN,
@@ -25,7 +26,7 @@ class Wis2SQSStack(Stack):
                                     receive_message_wait_time = Duration.seconds(2),
                                     # visibility cannot be less than lambda function timeout
                                     visibility_timeout=Duration.minutes(15),
-                                    dead_letter_queue=sqs.DeadLetterQueue(max_receive_count=2, queue=wis2_work_dlq),
+                                    dead_letter_queue=sqs.DeadLetterQueue(max_receive_count=max_receive_count, queue=wis2_work_dlq),
                                     content_based_deduplication=True,
                                     # setting deduplication scope to message group (this is specified at time of queueing by the mqtt client)
                                     deduplication_scope=sqs.DeduplicationScope.MESSAGE_GROUP,
@@ -36,4 +37,5 @@ class Wis2SQSStack(Stack):
         self.queue_arn = wis2_work_queue.queue_arn
         self.queue_name = wis2_work_queue.queue_name
         self.dlq_name = wis2_work_dlq.queue_name
+        self.max_receive_count = max_receive_count
         self.queue_url = wis2_work_queue.queue_url

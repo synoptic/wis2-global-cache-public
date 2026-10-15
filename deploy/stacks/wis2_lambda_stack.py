@@ -34,6 +34,7 @@ class Wis2ManagerLambdaStack(Stack):
                  lambda_role_arn: str = None,
                  include_insights: bool = False,
                  max_cache_bytes: int = None,
+                 max_receive_count: int = None,
                  **kwargs) -> None:
 
         super().__init__(scope, id, **kwargs)
@@ -76,6 +77,20 @@ class Wis2ManagerLambdaStack(Stack):
             private_subnets.append(private_subnet)
         private_subnets = ec2.SubnetSelection(subnets=private_subnets)
 
+        log_group = alogs.LogGroup(
+            self, "Logs",
+            log_group_name=f"/aws/lambda/{id}",
+            retention=alogs.RetentionDays.ONE_MONTH,
+            removal_policy=RemovalPolicy.DESTROY
+        )
+        # counts the GC_* markers logged by the manager Lambda error path (see README "Operations")
+        self.log_metrics = {
+            marker: log_group.add_metric_filter(
+                marker, filter_pattern=alogs.FilterPattern.all_terms(marker),
+                metric_namespace="WIS2GC", metric_name=marker, metric_value="1").metric(statistic="Sum")
+            for marker in ("GC_RETRY", "GC_UNCLASSIFIED_FAILURE", "GC_TLS_VERIFY_FAILED")
+        }
+
         # Lambda function definition remains mostly the same
         wis2_lambda = _lambda.Function(
             self, 'WIS2ManagerLambda',
@@ -104,17 +119,13 @@ class Wis2ManagerLambdaStack(Stack):
                 "MQTT_BROKER_HOST": broker_url,
                 "CACHE_ENDPOINT": cache_endpoint,
                 "REPORT_BY": report_by,
-                **({"MAX_CACHE_BYTES": str(max_cache_bytes)} if max_cache_bytes else {})
+                **({"MAX_CACHE_BYTES": str(max_cache_bytes)} if max_cache_bytes else {}),
+                **({"SQS_MAX_RECEIVE_COUNT": str(max_receive_count)} if max_receive_count else {})
             },
             insights_version=_lambda.LambdaInsightsVersion.VERSION_1_0_119_0 if include_insights else None,
             dead_letter_queue_enabled=True,
             timeout=Duration.minutes(15),
-            log_group=alogs.LogGroup(
-                self, "Logs",
-                log_group_name=f"/aws/lambda/{id}",
-                retention=alogs.RetentionDays.ONE_MONTH,
-                removal_policy=RemovalPolicy.DESTROY
-            )
+            log_group=log_group
         )
 
         event_source = event_sources.SqsEventSource(wis2_lambda_queue, batch_size=1,
