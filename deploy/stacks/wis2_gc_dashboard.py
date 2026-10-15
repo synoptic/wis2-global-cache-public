@@ -1,6 +1,9 @@
 from aws_cdk import (
     Stack,
     aws_cloudwatch as cloudwatch,
+    aws_cloudwatch_actions as cw_actions,
+    aws_sns as sns,
+    aws_sns_subscriptions as subs,
     Duration
 )
 from constructs import Construct
@@ -16,6 +19,7 @@ class WIS2GCDashboardStack(Stack):
         broker_ecs_cluster_name = kwargs.pop("broker_ecs_cluster_name", None)
         client_services = kwargs.pop("client_services", None)
         manager_log_metrics = kwargs.pop("manager_log_metrics", None)
+        alarm_email = kwargs.pop("alarm_email", None)
 
         super().__init__(scope, id, **kwargs)
         period_minutes = 5
@@ -344,3 +348,48 @@ class WIS2GCDashboardStack(Stack):
                 )
             )
 
+        if alarm_email:
+            # unencrypted on purpose: CloudWatch cannot publish to a topic that uses the AWS-managed SNS key
+            alarm_topic = sns.Topic(self, "AlarmTopic", display_name="WIS2 GC alarms")
+            alarm_topic.add_subscription(subs.EmailSubscription(alarm_email))
+            def sqs_metric(queue, name):
+                return cloudwatch.Metric(namespace="AWS/SQS", metric_name=name, dimensions_map={"QueueName": queue},
+                                         statistic="Maximum", period=Duration.minutes(period_minutes))
+            hour = Duration.hours(1)
+            # (name, description, metric, threshold, missing data, email on clear)
+            alarm_specs = [
+                # SQS stops publishing metrics for an idle queue, and nothing reads the DLQ, so keep the last state
+                ("DLQ-not-empty", "Records failed every SQS attempt and were not cached (see README 4.4)",
+                 sqs_metric(dlq_name, "ApproximateNumberOfMessagesVisible"), 1,
+                 cloudwatch.TreatMissingData.IGNORE, True),
+                # handled record failures are not Lambda Errors; these are crashes, timeouts and out-of-memory
+                ("Manager-Lambda-errors", "Manager Lambda invocations crashed, timed out or ran out of memory",
+                 cloudwatch.Metric(namespace="AWS/Lambda", metric_name="Errors",
+                                   dimensions_map={"FunctionName": manager_lambda_name},
+                                   statistic="Sum", period=Duration.minutes(period_minutes)), 1,
+                 cloudwatch.TreatMissingData.NOT_BREACHING, True),
+                # retried records wait 15-30 min in their FIFO group, so ages below 1 h are normal
+                ("Work-queue-stalled", "Oldest work queue message is over 1 hour old",
+                 sqs_metric(work_queue_name, "ApproximateAgeOfOldestMessage"), 3600,
+                 cloudwatch.TreatMissingData.NOT_BREACHING, True),
+                # metric filters publish nothing when no line matches. 1 h period and no clear email so a data
+                # server that fails intermittently does not send an alarm/clear pair per item
+                ("Unclassified-failures", "GC_UNCLASSIFIED_FAILURE logged: unexpected error, record not retried",
+                 manager_log_metrics["GC_UNCLASSIFIED_FAILURE"].with_(period=hour), 1,
+                 cloudwatch.TreatMissingData.NOT_BREACHING, False),
+                ("TLS-verify-failures", "GC_TLS_VERIFY_FAILED logged: data server TLS check failed, item not cached",
+                 manager_log_metrics["GC_TLS_VERIFY_FAILED"].with_(period=hour), 1,
+                 cloudwatch.TreatMissingData.NOT_BREACHING, False),
+            ]
+            for name, description, metric, threshold, missing, notify_ok in alarm_specs:
+                alarm = metric.create_alarm(
+                    self, f"Alarm{name.replace('-', '')}",
+                    alarm_name=f"WIS2GC-{name}",
+                    alarm_description=description,
+                    threshold=threshold,
+                    evaluation_periods=1,
+                    comparison_operator=cloudwatch.ComparisonOperator.GREATER_THAN_OR_EQUAL_TO_THRESHOLD,
+                    treat_missing_data=missing)
+                alarm.add_alarm_action(cw_actions.SnsAction(alarm_topic))
+                if notify_ok:
+                    alarm.add_ok_action(cw_actions.SnsAction(alarm_topic))

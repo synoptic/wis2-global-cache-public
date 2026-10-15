@@ -135,6 +135,7 @@ WIS2GCDashboardStack(
     work_queue_name=wis2_sqs_stack.queue_name,
     dlq_name=wis2_sqs_stack.dlq_name,
     manager_log_metrics=manager_lambda_stack.log_metrics,
+    alarm_email=os.environ['ALARM_EMAIL'],
     client_services = [dev_client_stack.service],
     broker_ecs_service_name=emqx_broker_stack.service.service.service_name,
     broker_ecs_cluster_name=emqx_broker_stack.cluster.cluster_name,

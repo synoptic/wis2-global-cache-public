@@ -175,7 +175,25 @@ the failed record was dropped and the next copy was processed straight away.
 
 - **Metrics:** CloudWatch metric filters count the three log markers as metrics in the `WIS2GC` namespace.
 - **Dashboard:** the `WIS2-Operations-Dashboard` graphs those metrics and the dead-letter queue depth.
-- **Alarms:** none are configured, because this repository defines no notification target (SNS topic).
+- **Alarms:** the `WIS2GCDashboard` stack creates the alarms below and an SNS topic that emails the address in
+  `ALARM_EMAIL` (read from the environment file; synth fails if it is unset). The recipient must click the SNS
+  confirmation email once before anything is delivered.
+
+| Alarm | Fires when | Period | Clear email | Usual cause |
+|---|---|---|---|---|
+| `WIS2GC-DLQ-not-empty` | dead-letter queue has a message | 5 min | yes | records failed both SQS attempts and were not cached |
+| `WIS2GC-Manager-Lambda-errors` | Lambda `Errors` >= 1 | 5 min | yes | crash, 15-minute timeout, or out of memory (see 4.2) |
+| `WIS2GC-Work-queue-stalled` | oldest work queue message >= 1 hour | 5 min | yes | Lambda not keeping up or not running |
+| `WIS2GC-Unclassified-failures` | `GC_UNCLASSIFIED_FAILURE` logged | 1 hour | no | unexpected error, record dropped |
+| `WIS2GC-TLS-verify-failures` | `GC_TLS_VERIFY_FAILED` logged | 1 hour | no | a data server's certificate failed verification (see 4.3) |
+
+- **Dead-letter queue alarm:** nothing reads the dead-letter queue, and SQS stops publishing metrics for an idle
+  queue, so this alarm keeps its last state when data is missing. It stays in alarm until the queue is purged or
+  redriven. Expired messages alone may not clear it. While it is in alarm, new failures do not send another email.
+- **Log marker alarms:** these clear without an email after an hour with no matching log line. A data server that
+  keeps failing at least once an hour keeps the alarm on and sends no further email. One that fails less often sends
+  one email per failure.
+- **Not covered:** if the Global Broker client stops, nothing reaches the work queue and no alarm fires.
 
 Logs Insights query for all markers:
 
