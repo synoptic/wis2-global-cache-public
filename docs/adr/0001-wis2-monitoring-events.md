@@ -52,13 +52,17 @@ Details:
   (optional, set through the CDK stack). When `MAX_CACHE_BYTES` is unset, the limit defaults to 25% of the Lambda
   memory size (`AWS_LAMBDA_FUNCTION_MEMORY_SIZE`), because the body is held in memory and the S3 multipart upload adds
   its own buffers. The 25% figure is an estimate. If it is too high, large items still run the Lambda out of memory
-  and are not reported. The notification is republished with its origin links unchanged.
+  and are not reported. See ADR 0002. The notification is republished with its origin links unchanged.
   `properties.cache` is not rewritten.
 - **Failures as typed exceptions.** `wis2_message.py` raises `TooLargeToCache`, `DownloadError` and `IntegrityError`.
   The handler maps each to an event.
 - **Once per data instance.** Before publishing, the Lambda claims a Redis key `wme|<type>|<data_id>|<pubtime>[|suffix]`
   with `SET NX EX`, using the same TTL as notification dedup. If the publish fails, the claim is deleted so a later copy
   of the notification can retry.
+- **Retried failures report once final.** A download failure that SQS will retry (see README "Failure handling")
+  publishes its `item.download` event only on the final attempt, when `ApproximateReceiveCount` reaches the queue's
+  `maxReceiveCount` (passed to the Lambda as `SQS_MAX_RECEIVE_COUNT`). An event cannot be withdrawn, so a short outage
+  that the retry recovers from is not reported. If the count is missing, the attempt is treated as final.
 - **Rate limit.** A fixed-window counter in Redis per (subject, event type) is applied to download and integrity events
   only. The defaults are 60 per 300 s (`WME_RATE_LIMIT`, `WME_RATE_WINDOW_SECONDS`). One warning is logged when the
   limit is reached.
@@ -67,7 +71,7 @@ Details:
 - **Never blocks caching.** `publish_wme` catches all errors, logs them, and returns False. A failed event never changes
   the cache result for the record.
 - **Broker ACL.** `wis2_publisher` may publish to `monitor/#`. `everyone` may subscribe to `monitor/#`. Other Global
-  Services are assumed to connect as `everyone` (to be confirmed).
+  Services connect as `everyone` (confirmed 2026-10-14).
 - **`error/` unchanged.** It stays as the internal debug topic with full tracebacks.
 
 ## Alternatives considered
@@ -111,6 +115,7 @@ Details:
 - Open items are tracked separately:
   - the subject rule for items from another cache's `cache/` topic (mitigated by the `origin/`-only rule above);
   - the final `dataschema` URL (clause 8 value adopted; check it resolves once published);
-  - which username Global Services use (`everyone` assumed; verify against the EMQX client list);
+  - which username Global Services use (confirmed 2026-10-14: Global Brokers connect to this GC as `everyone`, and
+    this GC connects to the Global Broker as `everyone`);
   - rate-limit values (defaults accepted; tune from logs);
   - the 25% memory fraction for the cache size limit (check "Max Memory Used" for a large item).
