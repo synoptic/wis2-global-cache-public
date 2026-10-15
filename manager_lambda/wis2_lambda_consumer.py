@@ -8,7 +8,6 @@ from random import randint
 import redis
 import gc
 import glob
-import paho.mqtt.publish
 import boto3
 import requests as requests
 from boto3.exceptions import S3UploadFailedError
@@ -19,6 +18,7 @@ import time
 import logging
 from enum import Enum
 import ssl
+import threading
 from wis2_message import Wis2Message, IntegrityError, DownloadError, TooLargeToCache
 import wis2_monitor
 
@@ -51,6 +51,7 @@ wme_rate_window_seconds = int(os.environ.get('WME_RATE_WINDOW_SECONDS', '300'))
 # work queue maxReceiveCount, set by the CDK stack; unset means every attempt counts as final, so no event is held back
 sqs_max_receive_count = int(os.environ.get('SQS_MAX_RECEIVE_COUNT', '1'))
 
+PUBLISH_TIMEOUT_SECONDS = 10
 TRANSIENT_HTTP_STATUS = (408, 429)
 # RetryError is what the download session raises once its own 5xx retries are exhausted
 TRANSIENT_DOWNLOAD_CAUSES = (requests.exceptions.ConnectionError, requests.exceptions.Timeout,
@@ -98,24 +99,57 @@ def is_final_attempt(receive_count) -> bool:
 
 
 def publish(topic: str, payload, broker: dict) -> None:
-    """Publishes one message to a broker with the WIS2 MQTT parameters (QoS 1, no retain).
+    """Publishes one message to a broker with the WIS2 MQTT parameters (QoS 1, no retain) and waits for the PUBACK.
 
     Args:
         topic: MQTT topic.
         payload: str or bytes payload.
         broker: Broker connection dict from ``brokers``.
+
+    Raises:
+        ConnectionError: The broker refused the connection, refused the message (for example an ACL denial),
+            or did not answer in time. Each step (TCP connect, TLS handshake, CONNACK, PUBACK) is bounded by
+            PUBLISH_TIMEOUT_SECONDS.
+        OSError: Network or TLS failure, including a broker certificate that fails verification.
+        RuntimeError: paho could not queue the message.
     """
-    paho.mqtt.publish.single(
-        topic,
-        payload,
-        hostname=broker['host'],
-        auth={'username': broker['username'], 'password': broker['password']},
-        port=broker['port'],
-        client_id=f"wis2_{randint(0, 100000000)}",
-        protocol=mqtt.MQTTv5,
-        qos=1,
-        tls={'ca_certs': None, 'tls_version': ssl.PROTOCOL_TLSv1_2, 'insecure': True}
-    )
+    acks = {}
+    connected = threading.Event()
+
+    def on_connect(client, userdata, flags, reason_code, properties):
+        acks["connect"] = reason_code
+        connected.set()
+
+    def on_publish(client, userdata, mid, reason_code, properties):
+        acks["publish"] = reason_code
+
+    # no reconnect: a reconnect would resend the QoS 1 message; a failure here is retried through SQS instead
+    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=f"wis2_{randint(0, 100000000)}",
+                         protocol=mqtt.MQTTv5, reconnect_on_failure=False)
+    client.connect_timeout = PUBLISH_TIMEOUT_SECONDS
+    client.username_pw_set(broker['username'], broker['password'])
+    client.tls_set(tls_version=ssl.PROTOCOL_TLSv1_2)
+    # rollback for broker certificate problems: set True (README "Broker TLS and publish acknowledgements")
+    client.tls_insecure_set(False)
+    client.on_connect = on_connect
+    client.on_publish = on_publish
+    # keepalive also bounds the blocking TLS handshake in connect()
+    client.connect(broker['host'], broker['port'], keepalive=PUBLISH_TIMEOUT_SECONDS)
+    client.loop_start()
+    try:
+        if not connected.wait(PUBLISH_TIMEOUT_SECONDS):
+            raise ConnectionError(f"no CONNACK from {broker['host']} within {PUBLISH_TIMEOUT_SECONDS}s")
+        if acks["connect"].is_failure:
+            raise ConnectionError(f"broker refused connection: {acks['connect']}")
+        info = client.publish(topic, payload, qos=1)
+        info.wait_for_publish(PUBLISH_TIMEOUT_SECONDS)
+        if "publish" not in acks:
+            raise ConnectionError(f"no PUBACK from {broker['host']} within {PUBLISH_TIMEOUT_SECONDS}s")
+        if acks["publish"].is_failure:
+            raise ConnectionError(f"broker refused publish to {topic}: {acks['publish']}")
+    finally:
+        client.disconnect()
+        client.loop_stop()
 
 
 def publish_wme(wis2_msg: Wis2Message, event_type: str, severity: str, title: str, description: str = None,
