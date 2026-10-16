@@ -120,29 +120,32 @@ stack's `max_cache_bytes` parameter. See `docs/adr/0002-cache-size-limit.md`.
 
 ### 4.3. TLS verification of data server downloads
 
-Downloads from WIS2 Nodes verify TLS certificates (commit 00f9cf7). Before that commit, an inverted `DEV-MODE` check
-turned verification off. A data server with an expired, self-signed or wrong-host certificate now fails. Its items
-are no longer cached, and each failure:
+Data server certificates are **not verified** at present. `VERIFY_DATA_SERVER_TLS` in
+`manager_lambda/wis2_message.py` is `False`, because several test-environment WIS2 Nodes serve expired or self-signed
+certificates (checked 2026-10-15). Production WIS2 Nodes are expected to have valid certificates whenever they use
+HTTPS (Guide 2.5.2), so this is meant to be temporary.
+
+To turn verification on, set `VERIFY_DATA_SERVER_TLS = True` and redeploy the Lambda:
+
+```bash
+cdk deploy test-wis2-manager-lambda --exclusively --app "python app_test_env.py" --profile <test-profile>
+```
+
+With verification on, a data server with an expired, self-signed or wrong-host certificate, or one that does not send
+its intermediate certificate, fails. Its items are not cached, and each failure:
 
 - logs `GC_TLS_VERIFY_FAILED` with the data server and data_id;
 - publishes an `item.download` ERROR monitoring event with description `SSLError`, for `origin/` notifications;
 - increments `wmo_wis2_gc_downloaded_errors_total` for that data server;
 - is not retried, because a certificate problem will fail the same way on retry.
 
-The trusted certificate authorities come from the `certifi` version pinned in `manager_lambda/requirements.txt`. If
-a data server with a valid certificate from a recently added authority fails, update that pin before rolling back.
+Python 3.13 and urllib3 2.x also require TLS 1.2 or later and strict X.509 rules. A check of every data server this
+cache had downloaded from found none that failed only because of these stricter rules.
 
-The move to Python 3.13 and urllib3 2.x (2026-10-15) made the checks stricter. A data server that passed before can
-now fail if it:
+The trusted certificate authorities come from the `certifi` version pinned in `manager_lambda/requirements.txt`.
 
-- only offers TLS 1.0 or 1.1 (TLS 1.2 is now the minimum);
-- uses a certificate that breaks strict X.509 rules, for example a private CA certificate without an Authority Key
-  Identifier or a basicConstraints extension that is not marked critical.
-
-After that deploy, check `GC_TLS_VERIFY_FAILED` by data server. The rollback below fixes the certificate cases but not
-the TLS version minimum.
-
-To find affected data servers, use CloudWatch Logs Insights on `/aws/lambda/test-wis2-manager-lambda`:
+To find failing data servers once verification is on, use CloudWatch Logs Insights on
+`/aws/lambda/test-wis2-manager-lambda`:
 
 ```
 filter @message like /GC_TLS_VERIFY_FAILED/
@@ -150,15 +153,8 @@ filter @message like /GC_TLS_VERIFY_FAILED/
 | stats count() by dataserver
 ```
 
-**Rollback.** Turn verification off for downloads only. In `manager_lambda/wis2_message.py`, `download_file`, change
-`verify=not dev_mode` to `verify=False`, then redeploy the Lambda:
-
-```bash
-cdk deploy test-wis2-manager-lambda --exclusively --app "python app_test_env.py" --profile <test-profile>
-```
-
-Do not roll back by setting `DEV-MODE=true`. Dev mode also skips the S3 upload, so `cache/` notifications would
-point at objects that do not exist. A plain `git revert 00f9cf7` no longer applies cleanly.
+Do not turn verification off by setting `DEV-MODE=true`. Dev mode also skips the S3 upload, so `cache/`
+notifications would point at objects that do not exist.
 
 ### 4.4. Failure handling and retries
 
@@ -220,7 +216,7 @@ the failed record was dropped and the next copy was processed straight away.
 | `WIS2GC-Manager-Lambda-errors` | Lambda `Errors` >= 1 | 5 min | yes | crash, 15-minute timeout, or out of memory (see 4.2) |
 | `WIS2GC-Work-queue-stalled` | oldest work queue message >= 1 hour | 5 min | yes | Lambda not keeping up or not running |
 | `WIS2GC-Unclassified-failures` | `GC_UNCLASSIFIED_FAILURE` logged | 1 hour | no | unexpected error, record dropped |
-| `WIS2GC-TLS-verify-failures` | `GC_TLS_VERIFY_FAILED` logged | 1 hour | no | a data server's certificate failed verification (see 4.3) |
+| `WIS2GC-TLS-verify-failures` | `GC_TLS_VERIFY_FAILED` logged | 1 hour | no | a data server's certificate failed verification; fires only when verification is on (see 4.3) |
 | `WIS2GC-<client stack>-not-running` | no CPU data from the Global Broker client service for 10 min | 5 min | yes | client task stopped or failing to start |
 
 - **Dead-letter queue alarm:** nothing reads the dead-letter queue, and SQS stops publishing metrics for an idle

@@ -11,9 +11,17 @@ from typing import Any
 from uuid import uuid4
 from datetime import datetime as dt
 import requests
+import urllib3
 import boto3
 import shutil
 from wis2_monitor import strip_url_query, strip_url_queries
+
+# Data server certificates are not verified until the test nodes have valid certificates (README 4.3).
+# To turn verification on, set this to True.
+VERIFY_DATA_SERVER_TLS = False
+if not VERIFY_DATA_SERVER_TLS:
+    # urllib3 otherwise warns on every unverified request
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
 class DownloadError(Exception):
@@ -366,7 +374,6 @@ class Wis2Message:
         session.mount('http://', requests.adapters.HTTPAdapter(max_retries=retries))
         session.mount('https://', requests.adapters.HTTPAdapter(max_retries=retries))
 
-        dev_mode = os.environ.get('DEV-MODE', 'False') in ['True', 'true', '1']
         tmp_path = os.path.join(tmp_dir, self.filename)
         max_bytes = shutil.disk_usage(tmp_dir).free
         memory_mb = os.environ.get('AWS_LAMBDA_FUNCTION_MEMORY_SIZE')
@@ -379,7 +386,7 @@ class Wis2Message:
             max_bytes = min(max_bytes, int(configured_max))
         try:
             # timeout=(10, 30) means: 10s connection timeout, 30s read timeout
-            with session.get(href, stream=True, timeout=(10, 30), verify=not dev_mode) as r:
+            with session.get(href, stream=True, timeout=(10, 30), verify=VERIFY_DATA_SERVER_TLS) as r:
                 r.raise_for_status()
                 expected_size = int(r.headers.get('content-length', 0))
                 downloaded_size = 0

@@ -43,7 +43,9 @@ minimum and strict X.509 rules).
   without an event.
 - **Remove URL query strings** from log lines, tracebacks and the `error` field of `error/` messages, and raise the
   urllib3 logger to ERROR.
-- **Keep the stricter data server TLS checks** that come with Python 3.13 and urllib3 2.x.
+- **Keep the stricter data server TLS checks** that come with Python 3.13 and urllib3 2.x for when certificate
+  verification is on. Verification itself is off for now (`VERIFY_DATA_SERVER_TLS = False`, README 4.3), because
+  several test-environment nodes have invalid certificates; turning it on is a tracked follow-up.
 
 ## Alternatives considered
 
@@ -76,5 +78,6 @@ minimum and strict X.509 rules).
   WIS2 Node.
 - The original notification inside `error/` messages keeps its links, query strings included. It is the notification
   as published on the Global Broker.
-- Data servers that only offer TLS 1.0 or 1.1, or whose certificates break strict X.509 rules, fail after the Python
-  3.13 deploy. The `verify=False` rollback (README 4.3) covers the certificate cases but not the TLS version.
+- While verification is off, data servers are not authenticated, and `GC_TLS_VERIFY_FAILED` and its alarm never
+  fire. When it is turned on, data servers that only offer TLS 1.0 or 1.1, or whose certificates are invalid or break
+  strict X.509 rules, fail. A 2026-10-15 check found none that failed only because of the strict rules.
