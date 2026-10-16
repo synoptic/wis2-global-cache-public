@@ -13,6 +13,7 @@ import requests as requests
 from boto3.exceptions import S3UploadFailedError
 from botocore.exceptions import BotoCoreError, ClientError
 from datetime import datetime as dt
+from urllib.parse import urlsplit
 import paho.mqtt.client as mqtt
 import time
 import logging
@@ -161,6 +162,21 @@ def publish(topic: str, payload, broker: dict) -> None:
     finally:
         client.disconnect()
         client.loop_stop()
+
+
+def source_host(wis2_msg: Wis2Message) -> str:
+    """Returns the data server hostname for WME titles, without userinfo or port.
+
+    Args:
+        wis2_msg: The notification message the event is about.
+
+    Returns:
+        The hostname, or "unknown" when the source link is missing or unparseable.
+    """
+    try:
+        return urlsplit(wis2_msg.src_link).hostname or "unknown"
+    except (TypeError, ValueError, AttributeError):
+        return "unknown"
 
 
 def publish_wme(wis2_msg: Wis2Message, event_type: str, severity: str, title: str, description: str = None,
@@ -449,7 +465,7 @@ def msg_handler(msg_batch, context):
                             [msg_centre, 'wmo_wis2_gc_integrity_failed_total']), cache_value=1, operation='inc')
                         # metrics.put_metric("wmo_wis2_gc_integrity_failed", 1)
                         publish_wme(wis2_msg, wis2_monitor.EVENT_ITEM_INTEGRITY, "ERROR",
-                                    title=f"Data item failed integrity check: {wis2_msg.data_id}",
+                                    title=f"File integrity failed: {source_host(wis2_msg)}",
                                     description=f"{e}; source: {wis2_msg.src_link}",
                                     dedup_suffix=wis2_msg.dataserver)
                         raise e
@@ -560,9 +576,11 @@ def msg_handler(msg_batch, context):
                 continue
             # an external ERROR event cannot be withdrawn, so a failure SQS will retry is reported only once it is final
             if not transient or fail_ctx["final_attempt"]:
+                host = source_host(wis2_msg)
                 publish_wme(wis2_msg, wis2_monitor.EVENT_ITEM_DOWNLOAD, "ERROR",
-                            title=f"Cannot download data item: {wis2_msg.src_link}",
-                            description=str(e), dedup_suffix=wis2_msg.dataserver)
+                            title=f"Cannot download data granule: {host}/{e.status}" if e.status
+                            else f"Cannot download data granule: {host}",
+                            description=f"{e}; source: {wis2_msg.src_link}", dedup_suffix=wis2_msg.dataserver)
             ds_name = wis2_msg.dataserver or 'unknown_dataserver'
             cache_metric(redis_host, "|".join([msg_centre, ds_name, 'wmo_wis2_gc_downloaded_errors_total']),
                          cache_value=1, operation='inc')
