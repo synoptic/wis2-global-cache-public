@@ -44,7 +44,8 @@ Details:
 
 - **Topic and fields.** The topic is `monitor/a/wis2/<subject>`. `subject` is the centre-id at level 4 of the
   notification topic. `source` is this cache's centre-id from `REPORT_BY`. Centre-ids are checked against the WIS2
-  centre-id pattern before use. Download and integrity events are published only for notifications received on
+  centre-id pattern before use. WMO confirmed this topic, `subject` and `source` rule for events about a node's
+  data on 2026-10-16. Download and integrity events are published only for notifications received on
   `origin/`. A failure fetching another cache's copy says nothing reliable about the origin node, so it goes to the
   metric and `error/` only. `item.cache` events are published for both channels. An invalid subject or `REPORT_BY` means no event is published, and an error is logged.
 - **Not caching.** The size decision is made before the body is read: from `Content-Length` when present, and from a
@@ -113,7 +114,8 @@ Details:
   - Unset `REPORT_BY`: no events, with one error log per event. Every environment must set it to its own centre-id.
 - New configuration: `REPORT_BY` (required for events), `MAX_CACHE_BYTES`, `WME_RATE_LIMIT`, `WME_RATE_WINDOW_SECONDS`.
 - Open items are tracked separately:
-  - the subject rule for items from another cache's `cache/` topic (mitigated by the `origin/`-only rule above);
+  - the subject rule for items from another cache's `cache/` topic (mitigated by the `origin/`-only rule above; the
+    WMO confirmation of 2026-10-16 covers only items received on `origin/`);
   - the final `dataschema` URL (clause 8 value adopted; check it resolves once published);
   - which username Global Services use (confirmed 2026-10-14: Global Brokers connect to this GC as `everyone`, and
     this GC connects to the Global Broker as `everyone`);
