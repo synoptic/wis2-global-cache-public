@@ -108,7 +108,7 @@ The manager Lambda decides whether an item is too large to cache before it reads
 when present and counts bytes while downloading otherwise.
 
 - The limit is the smaller of free `/tmp` space and `MAX_CACHE_BYTES`.
-- When `MAX_CACHE_BYTES` is unset, it defaults to 25% of the Lambda memory size (32 MB at the test env's 128 MB).
+- When `MAX_CACHE_BYTES` is unset, it defaults to 25% of the Lambda memory size (64 MB at the test env's 256 MB; at 128 MB the Lambda already peaked at 110 MB on small items).
 - An item over the limit is not cached. It is republished on `cache/` with its origin links, and an `item.cache` INFO
   monitoring event is published.
 

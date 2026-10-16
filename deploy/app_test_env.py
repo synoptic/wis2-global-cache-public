@@ -48,7 +48,7 @@ if subnet_ids_str:
 vpc_id = os.getenv('VPC_ID')
 
 redis_instance_type = "cache.t3.micro"
-lambda_memory = 128
+lambda_memory = 256
 
 # bucket to cache messages in their entirety for dev/debug
 # msg_cache_bucket = Wis2S3Bucket(app, f"{env_tag}-msg-cache", role_arn=lambda_role_arn, env=env)
