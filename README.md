@@ -120,10 +120,10 @@ stack's `max_cache_bytes` parameter. See `docs/adr/0002-cache-size-limit.md`.
 
 ### 4.3. TLS verification of data server downloads
 
-Data server certificates are **not verified** at present. `VERIFY_DATA_SERVER_TLS` in
-`manager_lambda/wis2_message.py` is `False`, because several test-environment WIS2 Nodes serve expired or self-signed
-certificates (checked 2026-10-15). Production WIS2 Nodes are expected to have valid certificates whenever they use
-HTTPS (Guide 2.5.2), so this is meant to be temporary.
+Data server certificates are **not verified**. `VERIFY_DATA_SERVER_TLS` in `manager_lambda/wis2_message.py` is
+`False`, because test-environment WIS2 Nodes are not required to have valid certificates (decided 2026-10-16, ADR
+0005). Production WIS2 Nodes are expected to have valid certificates whenever they use HTTPS (Guide 2.5.2), so turn
+verification on before running this cache against production nodes.
 
 To turn verification on, set `VERIFY_DATA_SERVER_TLS = True` and redeploy the Lambda:
 

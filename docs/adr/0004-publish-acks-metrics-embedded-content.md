@@ -44,8 +44,7 @@ minimum and strict X.509 rules).
 - **Remove URL query strings** from log lines, tracebacks and the `error` field of `error/` messages, and raise the
   urllib3 logger to ERROR.
 - **Keep the stricter data server TLS checks** that come with Python 3.13 and urllib3 2.x for when certificate
-  verification is on. Verification itself is off for now (`VERIFY_DATA_SERVER_TLS = False`, README 4.3), because
-  several test-environment nodes have invalid certificates; turning it on is a tracked follow-up.
+  verification is on. Verification itself is off in the test environment (`VERIFY_DATA_SERVER_TLS = False`, ADR 0005).
 
 ## Alternatives considered
 

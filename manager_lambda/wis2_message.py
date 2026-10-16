@@ -16,8 +16,8 @@ import boto3
 import shutil
 from wis2_monitor import strip_url_query, strip_url_queries
 
-# Data server certificates are not verified until the test nodes have valid certificates (README 4.3).
-# To turn verification on, set this to True.
+# Data server certificates are not verified: test-environment nodes are not required to have valid certificates
+# (ADR 0005). To turn verification on, set this to True.
 VERIFY_DATA_SERVER_TLS = False
 if not VERIFY_DATA_SERVER_TLS:
     # urllib3 otherwise warns on every unverified request
