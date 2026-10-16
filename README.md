@@ -299,3 +299,38 @@ docker run --rm -e PYTHONPATH=/src/manager_lambda -v "$PWD/manager_lambda:/src/m
   -w /src/manager_lambda python:3.13-slim sh -c \
   "pip install -q -r requirements.txt pytest==9.1.1 && python -m pytest -q -p no:cacheprovider"
 ```
+
+### 4.9. Certificates for alias hostnames
+
+Other DNS names can point at the broker's load balancer with a CNAME, for example `gc.wis2dev.io`. The TLS
+listeners (443, 8883, 18083) present the `CERT_ARN` certificate by default, so a client that connects with an alias
+name gets a hostname mismatch unless the alias has its own certificate. Each listener also serves the certificates in
+`GC_ALIAS_CERT_ARNS` (comma-separated ACM ARNs in the environment file) and picks one by the hostname the client
+requests (SNI).
+
+To add an alias:
+
+1. Request a certificate in the broker's region. It is free and changes nothing until it is attached:
+
+   ```bash
+   aws acm request-certificate --region <region> --domain-name <alias> --validation-method DNS \
+     --key-algorithm RSA_2048 --profile <test-profile>
+   ```
+
+2. Read the validation record and send it to whoever manages the alias's DNS zone. The record must stay in place:
+   ACM uses it to renew the certificate. ACM stops trying to validate after 72 hours.
+
+   ```bash
+   aws acm describe-certificate --region <region> --certificate-arn <arn> \
+     --query "Certificate.DomainValidationOptions[0].ResourceRecord" --profile <test-profile>
+   ```
+
+3. When `aws acm describe-certificate ... --query Certificate.Status` returns `ISSUED`, add the ARN to
+   `GC_ALIAS_CERT_ARNS`, run `cdk diff test-emqx-broker`, and deploy the broker with `--exclusively`. The diff
+   should add one `ListenerCertificate` per TLS listener and change only the ECS service's `DependsOn`.
+
+4. Check each port: `openssl s_client -connect <alias>:8883 -servername <alias> -verify_hostname <alias>` should
+   report `Verification: OK`.
+
+To remove an alias, take its ARN out of `GC_ALIAS_CERT_ARNS`, redeploy the broker, then delete the certificate.
+

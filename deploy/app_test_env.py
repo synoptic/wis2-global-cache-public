@@ -78,6 +78,8 @@ emqx_broker_stack = EmqxBrokerStack(
     zone_id=hosted_zone_id,
     a_record_name=a_record_name,
     cert_arn=cert_arn,
+    # comma-separated ACM ARNs for hostnames CNAMEd to the broker, e.g. gc.wis2dev.io
+    alias_cert_arns=[arn.strip() for arn in os.getenv('GC_ALIAS_CERT_ARNS', '').split(',') if arn.strip()],
     vpc_id=vpc_id,
     admin_creds=os.getenv('ADMIN_CREDS'),
     emqx_dash_admin_creds=os.getenv('EMQX_DASH_ADMIN_CREDS'),

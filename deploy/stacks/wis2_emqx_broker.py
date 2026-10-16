@@ -26,6 +26,7 @@ class EmqxBrokerStack(Stack):
                  zone_id: str,
                  a_record_name: str,
                  cert_arn: str,
+                 alias_cert_arns: list = None,
                  vpc_id: str = None,
                  admin_creds: str = None,
                  emqx_dash_admin_creds: str = None,
@@ -199,14 +200,14 @@ class EmqxBrokerStack(Stack):
             protocol=elbv2.Protocol.TCP,
             default_target_groups=[self.service.target_groups[2]]
         )
-        self.service.load_balancer.add_listener(
+        wss_listener = self.service.load_balancer.add_listener(
             id=f"{construct_id}-443-wss-listener",
             port=443,
             protocol=elbv2.Protocol.TLS,
             certificates=[elbv2.ListenerCertificate.from_arn(cert_arn)],
             default_target_groups=[self.service.target_groups[1]]
         )
-        self.service.load_balancer.add_listener(
+        mqtts_listener = self.service.load_balancer.add_listener(
             id=f"{construct_id}-8883-tls-listener",
             port=8883,
             certificates=[elbv2.ListenerCertificate.from_arn(
@@ -215,7 +216,7 @@ class EmqxBrokerStack(Stack):
             protocol=elbv2.Protocol.TLS,
             default_target_groups=[self.service.target_groups[2]]
         )
-        self.service.load_balancer.add_listener(
+        dashboard_listener = self.service.load_balancer.add_listener(
             id=f"{construct_id}-18083-tls-listener",
             port=18083,
             protocol=elbv2.Protocol.TLS,
@@ -224,6 +225,12 @@ class EmqxBrokerStack(Stack):
             )],
             default_target_groups=[self.service.target_groups[0]]
         )
+        # other DNS names aliased to this NLB (e.g. gc.wis2dev.io); cert_arn stays the default and the NLB picks the
+        # certificate by SNI (README "Certificates for alias hostnames")
+        if alias_cert_arns:
+            for listener in (wss_listener, mqtts_listener, dashboard_listener):
+                listener.add_certificates("AliasCertificates",
+                                          [elbv2.ListenerCertificate.from_arn(arn) for arn in alias_cert_arns])
         # Allow traffic from the load balancer
         self.service.service.connections.allow_from(self.service.load_balancer, ec2.Port.tcp(8083))
         self.service.service.connections.allow_from(self.service.load_balancer, ec2.Port.tcp(1883))
