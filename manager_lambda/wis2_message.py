@@ -2,6 +2,7 @@ import base64
 import hashlib
 import io
 import json
+import logging
 import os
 import traceback
 import urllib
@@ -15,6 +16,8 @@ import urllib3
 import boto3
 import shutil
 from wis2_monitor import strip_url_query, strip_url_queries
+
+logger = logging.getLogger(__name__)
 
 # Data server certificates are not verified: test-environment nodes are not required to have valid certificates
 # (ADR 0005). To turn verification on, set this to True.
@@ -173,6 +176,17 @@ class Wis2Message:
             # Set attributes
             self.src_link = src_link
             self.filename = urllib.parse.unquote(filename)  # Decode percent-encoded filenames
+            # a decoded %2F or %00, or a dot segment, would escape tmp_dir in download_file and give an S3 key
+            # whose URL clients resolve to a different object; replace them so the item is still cached (ADR 0006)
+            safe_filename = self.filename.replace('/', '_').replace('\x00', '_')
+            if safe_filename in ('.', '..'):
+                safe_filename = safe_filename.replace('.', '_')
+            if safe_filename != self.filename:
+                logger.warning("GC_UNSAFE_FILENAME replaced: filename=%r stored_as=%r data_id=%r", self.filename,
+                               safe_filename, self.data_id,
+                               extra={"source_filename": self.filename, "stored_as": safe_filename,
+                                      "data_id": self.data_id})
+                self.filename = safe_filename
             self.dataserver = parsed.netloc
 
             return link_href
@@ -474,7 +488,14 @@ class Wis2Message:
         topic_pieces = self.topic.split('/')
         # get wis2 index from topic_pieces
         topic_prefix = "/".join(topic_pieces[topic_pieces.index('wis2') + 1:])
-        s3_key = "/".join([data_prefix, topic_prefix, self.filename])
+        # a pubtime path segment gives each data instance (incl. updates) a unique URL (WNM: canonical/update href
+        # SHALL be unique) while keeping the original filename. Built from the parsed epoch, not the raw string,
+        # so untrusted pubtime text never reaches the key.
+        pubtime_dt = dt.fromtimestamp(round(self.pubtime_epoch, 3))
+        pubtime_segment = pubtime_dt.strftime('%Y%m%dT%H%M%S')
+        if pubtime_dt.microsecond:
+            pubtime_segment += f".{pubtime_dt.microsecond // 1000:03d}"
+        s3_key = "/".join([data_prefix, topic_prefix, pubtime_segment + 'Z', self.filename])
         return s3_key
 
     def upload_to_bucket(self, data_bytes: bytes) -> str:
@@ -491,7 +512,7 @@ class Wis2Message:
         s3_key = self.format_s3_key()
         # construct download url
         dnld_url = os.path.join(f"https://{self.env['s3_bucket_name']}.s3.amazonaws.com",
-                                s3_key)
+                                urllib.parse.quote(s3_key))
         setattr(self, 'dnld_url', dnld_url)
 
         if os.environ.get('DEV-MODE', 'False') in ['True', 'true', '1']:
