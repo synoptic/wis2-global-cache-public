@@ -1,0 +1,30 @@
+---
+title: WIS2 Global Cache - system context (C4 level 1)
+---
+%%{init: {"flowchart": {"nodeSpacing": 35, "rankSpacing": 80}}}%%
+flowchart LR
+    %% C4 notation: dark blue = person, blue = this system, grey = external system. Arrows follow the data.
+
+    operator(["GC operator<br/>[Person]<br/>deploys with CDK, watches the dashboard and alarms, redrives the DLQ"]):::person
+    nodes["WIS2 Nodes<br/>[External system]<br/>publish origin/ notifications and host the data items"]:::ext
+    other_gc["Other Global Caches<br/>[External system]<br/>publish cache/ notifications for the copies they hold"]:::ext
+    gb["WIS2 Global Brokers<br/>[External system]<br/>fan out every notification WIS2-wide"]:::ext
+
+    gc["WIS2 Global Cache<br/>[Software system]<br/>downloads and hash-checks each core data item, keeps a copy for 24 h, republishes the notification with the cached URL, reports per-data-server metrics and monitoring events"]:::system
+
+    consumers["Data consumers<br/>[External system]<br/>subscribe to cache/ notifications, download cached items"]:::ext
+    gm["WIS2 Global Monitor<br/>[External system]<br/>collects OpenMetrics and monitor/ events from every Global Cache"]:::ext
+
+    nodes -- "origin/ notifications<br/>MQTT" --> gb
+    other_gc -- "cache/ notifications<br/>MQTT" --> gb
+    gb -- "origin/ and cache/<br/>GC subscribes, MQTT 5 over TLS" --> gc
+    nodes -- "data items<br/>GC downloads, HTTPS" --> gc
+    gc -- "cache/ notifications<br/>GB subscribes to the GC broker, MQTT over TLS" --> gb
+    gc -- "cache/ notifications and cached items<br/>MQTT over TLS or WSS, HTTPS" --> consumers
+    gc -- "OpenMetrics and monitor/ events<br/>HTTPS, MQTT over TLS" --> gm
+    operator -- "deploys, monitors, redrives or purges the DLQ<br/>CDK, AWS console and CLI" --> gc
+    gc -. "alarm and OK emails<br/>SNS" .-> operator
+
+    classDef person fill:#08427B,stroke:#052E56,color:#FFFFFF
+    classDef system fill:#1168BD,stroke:#0B4884,color:#FFFFFF
+    classDef ext fill:#999999,stroke:#6B6B6B,color:#FFFFFF

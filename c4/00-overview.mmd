@@ -1,0 +1,43 @@
+---
+title: WIS2 Global Cache - overview, the path of one notification
+---
+%%{init: {"flowchart": {"nodeSpacing": 35, "rankSpacing": 70}}}%%
+flowchart LR
+    %% C4 notation: grey = external system, blue = container of this system. Arrows follow the data; the label
+    %% names the initiator where that differs. Thick numbered edges are the happy path of one notification.
+
+    gb["WIS2 Global Brokers<br/>[External system]<br/>fan out origin/ and cache/ notifications"]:::ext
+    nodes["WIS2 Nodes<br/>[External system]<br/>data servers that host the items"]:::ext
+    downstream["Global Brokers and data consumers<br/>[External system]<br/>subscribe to cache/, download items"]:::ext
+    gm["WIS2 Global Monitor<br/>[External system]<br/>collects metrics and monitoring events"]:::ext
+
+    subgraph gc ["WIS2 Global Cache (AWS)"]
+        direction LR
+        client["Global Broker client<br/>[Container: Python, paho-mqtt, ECS Fargate]<br/>one MQTT 5 session per Global Broker, filters, enqueues"]:::container
+        queue[["Work queue<br/>[Container: SQS FIFO + DLQ]<br/>message group = data_id, two attempts then DLQ"]]:::container
+        manager["Manager Lambda<br/>[Container: Python 3.13, in VPC]<br/>dedup, fetch, verify, store, republish"]:::container
+        redis[("Redis<br/>[Container: ElastiCache]<br/>data_id to pubtime 6 h, metrics, event claims")]:::container
+        bucket[("Cache bucket<br/>[Container: S3, public read, 24 h expiry]<br/>data/TOPIC/PUBTIME/FILENAME")]:::container
+        broker["GC MQTT broker<br/>[Container: EMQX, ECS Fargate x3, public NLB]<br/>cache/, monitor/ and error/ topics"]:::container
+        metrics["Metrics API<br/>[Container: API Gateway + Lambda]<br/>GET /metrics as OpenMetrics"]:::container
+        cw["CloudWatch<br/>[Container: logs, metric filters, alarms, SNS]<br/>GC_* markers, DLQ depth, queue age, client running"]:::container
+    end
+
+    gb == "1 origin/ and cache/ notifications<br/>MQTT 5 over TLS, QoS 1" ==> client
+    client == "2 enqueue<br/>MessageGroupId = data_id" ==> queue
+    queue == "3 one record per invocation" ==> manager
+    manager == "4 dedup by pubtime, 8 record metrics" ==> redis
+    nodes == "5 download and hash check<br/>Manager initiates, HTTPS GET" ==> manager
+    manager == "6 upload" ==> bucket
+    manager == "7 cache/ notification with the bucket URL, QoS 1<br/>on failure: monitor/ event and error/ message" ==> broker
+    broker == "9 cache/#" ==> downstream
+    bucket == "10 download" ==> downstream
+    redis -- "wmo_wis2_gc_* keys" --> metrics
+    metrics -- "11 GET /metrics" --> gm
+    broker -- "12 monitor/#" --> gm
+    manager -. "transient failure: returned for one retry" .-> queue
+    manager -. "structured logs with GC_* markers" .-> cw
+
+    classDef ext fill:#999999,stroke:#6B6B6B,color:#FFFFFF
+    classDef container fill:#438DD5,stroke:#2E6295,color:#FFFFFF
+    style gc fill:#FFFFFF,stroke:#444444,stroke-dasharray:6 4

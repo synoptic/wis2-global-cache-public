@@ -1,0 +1,50 @@
+---
+title: WIS2 Global Cache - Manager Lambda components (C4 level 3)
+---
+%%{init: {"flowchart": {"nodeSpacing": 30, "rankSpacing": 80}}}%%
+flowchart LR
+    %% C4 notation: light blue = component, grey = other containers and external systems. Arrows show calls,
+    %% from caller to callee. Dashed edges are taken only on a failure.
+
+    queue[["Work queue<br/>[Container: SQS FIFO]"]]:::ext
+
+    subgraph manager ["Manager Lambda (manager_lambda/)"]
+        direction LR
+        handler["msg_handler<br/>[Component: wis2_lambda_consumer.py]<br/>per record: clean /tmp, parse, uniqueness check, fetch, upload, store pubtime, publish, record metrics, handle failures"]:::component
+        message["Wis2Message<br/>[Component: wis2_message.py]<br/>parses id, data_id, topic, links, pubtime. Source link: deletion, else update, else canonical. do_cache, is_unique, unique S3 key, cache/ notification with new id and link"]:::component
+        fetch["fetch_validated<br/>[Component: wis2_lambda_consumer.py]<br/>valid embedded utf-8 or base64 content first, gzip never decoded, otherwise download. Integrity checked either way"]:::component
+        download["download_file + validate_integrity<br/>[Component: wis2_message.py, requests]<br/>streams to /tmp, limit = min of free /tmp and MAX_CACHE_BYTES or 25 percent of memory, retries 5xx twice, sha2 or sha3 check"]:::component
+        publish["publish<br/>[Component: wis2_lambda_consumer.py, paho-mqtt]<br/>one short-lived MQTT 5 client per message, verifies broker certificate, CONNACK and PUBACK each within 10 s, no reconnect"]:::component
+        wme["publish_wme<br/>[Component: wis2_lambda_consumer.py]<br/>monitoring events for origin/ items, claimed once per item and event in Redis, rate limited per centre, never raises"]:::component
+        monitor["wis2_monitor<br/>[Component: wis2_monitor.py]<br/>CloudEvents WME build and encode under 8 KiB, centre-id checks, URL query stripping, claim and rate-limit helpers"]:::component
+        classify["is_transient + is_final_attempt<br/>[Component: wis2_lambda_consumer.py]<br/>retry once: network, 5xx, 408, 429, S3, Redis, publish errors. Drop: TLS, other 4xx, integrity, unknown. Logs GC_RETRY, GC_UNCLASSIFIED_FAILURE or GC_TLS_VERIFY_FAILED"]:::component
+        metrics["cache_metric<br/>[Component: wis2_lambda_consumer.py]<br/>INCR and SET wmo_wis2_gc_* keys per centre and data server, success counters only after the cache/ publish"]:::component
+    end
+
+    nodes["WIS2 Nodes<br/>[External system]<br/>data servers"]:::ext
+    bucket[("Cache bucket<br/>[Container: S3]")]:::ext
+    broker["GC MQTT broker<br/>[Container: EMQX]"]:::ext
+    redis[("Dedup and metrics store<br/>[Container: ElastiCache Redis]")]:::ext
+
+    queue -- "SQS record: notification, topic, receive count" --> handler
+    handler -- "parse, is_unique, upload_to_bucket, format_cache_msg" --> message
+    handler -- "when do_cache" --> fetch
+    fetch --> download
+    download -- "GET source link, streamed<br/>HTTPS, 10 s connect, 30 s read" --> nodes
+    message -- "upload_fileobj<br/>data/TOPIC/PUBTIME/FILENAME" --> bucket
+    handler -- "cache/TOPIC notification<br/>error/TOPIC on failure" --> publish
+    publish -- "CONNECT, PUBLISH QoS 1, wait PUBACK<br/>MQTT 5 over TLS 8883" --> broker
+    handler -. "item.cache INFO when too large<br/>item.integrity ERROR<br/>item.download ERROR on the final attempt" .-> wme
+    fetch -. "item.integrity WARNING<br/>when embedded content is invalid" .-> wme
+    wme --> monitor
+    wme -- "monitor/a/wis2/CENTRE" --> publish
+    handler -. "on exception" .-> classify
+    classify -. "batchItemFailures<br/>transient errors only" .-> queue
+    handler -- "after the cache/ publish<br/>or on download and integrity errors" --> metrics
+    handler -- "GET and SET data_id EX 6 h<br/>DEL when the publish fails" --> redis
+    wme -- "SET NX claim, INCR rate window" --> redis
+    metrics -- "INCR and SET" --> redis
+
+    classDef component fill:#85BBF0,stroke:#5D82A8,color:#000000
+    classDef ext fill:#999999,stroke:#6B6B6B,color:#FFFFFF
+    style manager fill:#FFFFFF,stroke:#444444,stroke-dasharray:6 4

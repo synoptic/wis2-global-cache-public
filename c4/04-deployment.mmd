@@ -1,0 +1,67 @@
+---
+title: WIS2 Global Cache - deployment (AWS, CDK stacks in deploy/)
+---
+%%{init: {"flowchart": {"nodeSpacing": 30, "rankSpacing": 80, "subGraphTitleMargin": {"top": 28, "bottom": 8}}}}%%
+flowchart LR
+    %% C4 deployment view: boxes are deployment nodes, blue = container instance, light grey = AWS edge service,
+    %% dark grey = external system. Arrows show network connections from the side that opens them.
+
+    inbound["Global Brokers, subscribers, data consumers, Global Monitor<br/>[External systems, inbound]"]:::ext
+
+    subgraph aws ["AWS account, one region. Test env prefixes stack names with test-"]
+        direction LR
+
+        subgraph edge ["Public entry points. Hosted zone and ACM certificate are pre-existing"]
+            nlb["Network Load Balancer<br/>[stack emqx-broker, Route 53 alias for the broker name]<br/>1883 TCP. 8883, 443 and 18083 TLS with the ACM certificate plus alias certificates chosen by SNI"]:::infra
+            apigw["API Gateway REST<br/>[stack wis2-metrics-lambda, Route 53 alias for the metrics name]<br/>custom domain, stage cache 60 s, throttle 5 rps"]:::infra
+        end
+
+        subgraph vpc ["Pre-existing VPC, two private subnets: no public IPs, egress through NAT gateways with static IPs"]
+            direction LR
+            subgraph ecs_broker ["ECS cluster for the broker (stack emqx-broker)"]
+                broker["EMQX 5.7 broker<br/>[Fargate service, 3 tasks, 512 MiB, Cloud Map DNS cluster discovery]<br/>image from emqx_broker/ with the ACL baked in. Users are written at start from the task environment"]:::container
+            end
+            subgraph ecs_clients ["ECS cluster for clients (stack wis2-client-cluster)"]
+                client["Global Broker client<br/>[Fargate service per Global Broker, 0.5 vCPU, 1 GiB, desired 1]<br/>stack wis2-client-NAME, image from client/"]:::container
+            end
+            manager["Manager Lambda<br/>[Python 3.13 arm64, 15 min timeout, Lambda Insights in test, pre-existing IAM role]<br/>stack wis2-manager-lambda"]:::container
+            metrics_fn["Metrics Lambda<br/>[Python 3.13, 128 MB]<br/>stack wis2-metrics-lambda"]:::container
+            redis[("Redis replication group<br/>[ElastiCache, cluster mode off, no encryption]<br/>prod: 1 replica, Multi-AZ. test: no replica. Endpoints published to SSM and read by the Lambda stacks at synth<br/>stack wis2-redis-cache")]:::container
+        end
+
+        subgraph regional ["Regional services"]
+            queue[["Work queue and DLQ<br/>[SQS FIFO, removal policy retain]<br/>stack wis2-sqs-work"]]:::container
+            bucket[("Cache bucket<br/>[S3]<br/>prod: existing bucket outside this repo. test: stack testS3, public read, 1 day expiry")]:::container
+            cw["CloudWatch and SNS<br/>[log groups, metric filters, dashboard, alarms, email topic]<br/>stack WIS2GCDashboard"]:::container
+        end
+    end
+
+    gb["WIS2 Global Brokers<br/>[External system, outbound]"]:::ext
+    nodes["WIS2 Nodes<br/>[External system, outbound]<br/>data servers"]:::ext
+
+    inbound -- "cache/# and monitor/#<br/>MQTTS 8883, WSS 443, dashboard 18083" --> nlb
+    inbound -- "GET /metrics<br/>HTTPS" --> apigw
+    inbound -- "download cached items<br/>HTTPS" --> bucket
+    nlb -- "TCP 1883, 8083, 18083" --> broker
+    apigw -- "proxy integration" --> metrics_fn
+    metrics_fn -- "reader endpoint<br/>Redis 6379" --> redis
+    client -- "MQTT 5 over TLS<br/>through the NAT gateway" --> gb
+    client -- "SendMessage" --> queue
+    manager -- "polled by the event source mapping<br/>batch size 1" --> queue
+    nlb ~~~ client
+    apigw ~~~ manager
+    manager -- "HTTPS GET<br/>through the NAT gateway" --> nodes
+    manager -- "primary endpoint<br/>Redis 6379" --> redis
+    manager -- "upload" --> bucket
+    manager -- "MQTTS 8883 to the broker's public hostname<br/>leaves the VPC through the NAT gateway" --> nlb
+    manager -. "logs and metrics" .-> cw
+
+    classDef container fill:#438DD5,stroke:#2E6295,color:#FFFFFF
+    classDef infra fill:#E8EEF5,stroke:#7A8FA6,color:#000000
+    classDef ext fill:#999999,stroke:#6B6B6B,color:#FFFFFF
+    style aws fill:#FFFFFF,stroke:#444444,stroke-dasharray:6 4
+    style vpc fill:#F4F8FC,stroke:#9BB7D4
+    style edge fill:#F4F8FC,stroke:#9BB7D4
+    style regional fill:#F4F8FC,stroke:#9BB7D4
+    style ecs_clients fill:#FFFFFF,stroke:#9BB7D4
+    style ecs_broker fill:#FFFFFF,stroke:#9BB7D4

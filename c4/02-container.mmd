@@ -1,0 +1,48 @@
+---
+title: WIS2 Global Cache - containers (C4 level 2)
+---
+%%{init: {"flowchart": {"nodeSpacing": 35, "rankSpacing": 70}}}%%
+flowchart LR
+    %% C4 notation: dark blue = person, blue = container, grey = external system. Arrows follow the data; the label
+    %% names the initiator where that differs. Dashed edges are failure handling and operations traffic.
+
+    gb["WIS2 Global Brokers<br/>[External system]"]:::ext
+    nodes["WIS2 Nodes<br/>[External system]<br/>data servers"]:::ext
+    consumers["Global Brokers and data consumers<br/>[External system]"]:::ext
+    gm["WIS2 Global Monitor<br/>[External system]"]:::ext
+    operator(["GC operator<br/>[Person]<br/>watches the dashboard, redrives or purges the DLQ, uses the EMQX dashboard on 18083"]):::person
+
+    subgraph gc ["WIS2 Global Cache"]
+        direction LR
+        client["Global Broker client<br/>[Container: Python 3, paho-mqtt, ECS Fargate service, one per Global Broker]<br/>persistent MQTT 5 session. Drops notifications with no links, ones already in the bucket, and message ids seen in the last 30 min"]:::container
+        queue[["Work queue<br/>[Container: SQS FIFO]<br/>group = data_id, 24 h retention, 15 min visibility, maxReceiveCount 2"]]:::container
+        dlq[["Dead-letter queue<br/>[Container: SQS FIFO, 2 day retention]<br/>nothing reads it automatically"]]:::container
+        manager["Manager Lambda<br/>[Container: Python 3.13, arm64, in VPC, batch size 1, up to 500 concurrent]<br/>dedup check, fetch and hash-check, upload, publish cache/, record metrics. Classifies failures as retry or drop"]:::container
+        redis[("Dedup and metrics store<br/>[Container: ElastiCache Redis, cluster mode off, no TLS]<br/>data_id to pubtime with 6 h TTL. wmo_wis2_gc_* metrics per centre and data server. Event claims and rate limits")]:::container
+        bucket[("Cache bucket<br/>[Container: S3, public read, 24 h expiry]<br/>data/TOPIC/PUBTIME/FILENAME. Prod bucket is managed outside this repo")]:::container
+        broker["GC MQTT broker<br/>[Container: EMQX on ECS Fargate, 3 tasks, Cloud Map discovery, public NLB]<br/>MQTTS 8883, WSS 443, MQTT 1883, dashboard 18083. File ACL per user"]:::container
+        metrics_api["Metrics API<br/>[Container: API Gateway REST + Python 3.13 Lambda, custom domain, 60 s cache, 5 rps]<br/>GET /metrics renders wmo_wis2_gc_* as OpenMetrics"]:::container
+        cw["Operations dashboard and alarms<br/>[Container: CloudWatch logs, metric filters, dashboard, alarms, SNS]<br/>counts GC_RETRY, GC_UNCLASSIFIED_FAILURE and GC_TLS_VERIFY_FAILED. Alarms on DLQ depth, queue age, Lambda errors, stopped client"]:::container
+    end
+
+    gb -- "origin/ and cache/ data-core and metadata topics<br/>client subscribes, MQTT 5 over TLS, QoS 1" --> client
+    client -- "SendMessage<br/>MessageGroupId = data_id" --> queue
+    queue -- "event source mapping<br/>batch size 1" --> manager
+    queue -. "after two failed receives" .-> dlq
+    manager -- "GET and SET data_id, INCR metrics, SET NX claims<br/>Redis 6379" --> redis
+    nodes -- "data item<br/>HTTPS GET by the Manager, or embedded content" --> manager
+    manager -- "upload<br/>S3 API" --> bucket
+    manager -- "cache/, monitor/ and error/ messages<br/>MQTT 5 over TLS 8883, QoS 1, waits for PUBACK" --> broker
+    manager -. "transient failure: one retry" .-> queue
+    manager -. "structured logs, GC_* markers, Lambda metrics" .-> cw
+    redis -- "wmo_wis2_gc_* keys<br/>reader endpoint" --> metrics_api
+    metrics_api -- "GET /metrics<br/>HTTPS" --> gm
+    broker -- "monitor/#<br/>MQTTS" --> gm
+    broker -- "cache/#<br/>MQTTS 8883 or WSS 443" --> consumers
+    bucket -- "cached items<br/>HTTPS" --> consumers
+    cw -. "alarm and OK emails<br/>SNS" .-> operator
+
+    classDef person fill:#08427B,stroke:#052E56,color:#FFFFFF
+    classDef container fill:#438DD5,stroke:#2E6295,color:#FFFFFF
+    classDef ext fill:#999999,stroke:#6B6B6B,color:#FFFFFF
+    style gc fill:#FFFFFF,stroke:#444444,stroke-dasharray:6 4
