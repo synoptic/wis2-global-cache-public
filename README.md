@@ -52,6 +52,10 @@ instructions.
 
 ### 3.2. Deployment Steps
 
+The CDK app is `deploy/app_test_env.py`. It reads `deploy/wis2test.env` (git-ignored) for the account and region,
+VPC and subnet ids, hosted zone, certificate, Manager Lambda role, Global Broker connection string, broker user
+credentials, `REPORT_BY` and `ALARM_EMAIL`, and deploys the stacks with the `test-` prefix.
+
 The best way to log in to the AWS account is to use the AWS CLI. The following command will open a browser window and
 ask you to log in to the AWS account.
 
@@ -65,21 +69,14 @@ or if you already have your profile set up, you can use the following command:
 aws sso login --profile <profile_name>
 ```
 
-Then you can deploy the stack using the _deploy_ command, ie:
+Then deploy every stack from the `deploy` directory:
 
 ```bash
-cdk deploy --all --profile wis2-gc
+cd deploy
+cdk deploy --all --app "python app_test_env.py" --profile <test-profile>
 ```
 
-#### 3.2.1. Development deployment
-
-Under the _deploy_ directory there is a corresponding app_dev.py file that can be used to deploy a similar app, to the
-development environment. Environment variables and parameters are set in this file and passed to the same stack components used in the
-prod app.py file.
-
-```bash
-cdk deploy --all --profile wis2-gc --app "python app_dev.py"
-```
+To deploy single stacks after a change, see section 4.1.
 
 ## 4. Operations (test environment)
 
